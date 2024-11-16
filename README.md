@@ -1,6 +1,6 @@
 # nymChat
 ---
-Python Messaging Client for secure, asynchronous messaging over the Nym Mixnet, a decentralized network designed for privacy.
+Python Messaging Client for secure messaging over the Nym Mixnet, a decentralized network designed for privacy.
 ---
 ## Prerequisites
 
@@ -32,7 +32,7 @@ cd nymChat
 ```
 
 2. **Create Virutal Environment**
-- Run these commands to create a and activate a virtual environment:
+- Run these commands to create and activate a virtual environment:
 ```
 python3 -m venv venv
 source venv/bin/activate
