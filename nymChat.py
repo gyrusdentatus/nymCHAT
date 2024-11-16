@@ -1,76 +1,112 @@
 import asyncio
-import websockets
 import json
+import tkinter as tk
+from tkinter.scrolledtext import ScrolledText
+import websockets
 
 class MixnetMessage:
-    def __init__(self, messageBytes, recipientAddress, surbs=0):
-        self.messageBytes = messageBytes
-        self.recipientAddress = recipientAddress
+    def __init__(self, message_bytes, recipient_address, surbs=0):
+        self.message_bytes = message_bytes
+        self.recipient_address = recipient_address
         self.surbs = surbs
 
-    def toDict(self):
+    def to_dict(self):
+        # convert the message to a dictionary for json serialization
         return {
             "type": "send",
-            "recipient": self.recipientAddress,
-            "message": self.messageBytes,
+            "recipient": self.recipient_address,
+            "message": self.message_bytes,
             "surbs": self.surbs
         }
 
-async def asyncInput(prompt=""):
-    # asynchronous input to avoid blocking the main event loop
-    print(prompt, end="", flush=True)
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, input)
+    def is_valid(self):
+        # validate message before sending
+        return bool(self.recipient_address and self.message_bytes)
 
-async def sendMessages(websocket, recipientAddress):
-    # function to handle sending messages asynchronously
-    while True:
-        messageContent = await asyncInput("Enter your message (or type 'exit' to quit): ")
-        if messageContent.lower() == "exit":
-            print("exiting message sending loop.")
-            await websocket.close()
-            break
-        
-        message = MixnetMessage(messageContent, recipientAddress)
-        await websocket.send(json.dumps(message.toDict()))
-        print("message sent!")
+class AsyncTkApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Nym Messaging Client")
 
-async def receiveMessages(websocket):
-    # function to handle receiving messages asynchronously
-    print("waiting for incoming messages...")
-    try:
-        while True:
-            incomingMessage = await websocket.recv()
-            messageData = json.loads(incomingMessage)
-            print("\nincoming message:", messageData.get("message"))
-    except websockets.exceptions.ConnectionClosed:
-        print("connection closed by the server.")
+        # tkinter widgets
+        self.chatDisplay = ScrolledText(root, state='disabled', width=50, height=20)
+        self.chatDisplay.pack(pady=10)
 
-async def main():
-    uri = "ws://127.0.0.1:1977"
-    try:
-        async with websockets.connect(uri) as websocket:
-            print("connected to the nym client websocket")
+        self.recipientEntry = tk.Entry(root, width=50)
+        self.recipientEntry.insert(0, "Recipient Address")
+        self.recipientEntry.pack(pady=5)
 
-            # get self address
-            await websocket.send(json.dumps({"type": "selfAddress"}))
-            response = await websocket.recv()
-            selfAddress = json.loads(response).get("address")
-            print("your nym address:", selfAddress)
+        self.messageEntry = tk.Entry(root, width=50)
+        self.messageEntry.insert(0, "Type your message here")
+        self.messageEntry.pack(pady=5)
 
-            recipientAddress = input("Enter the recipient's nym address: ").strip()
+        self.sendButton = tk.Button(root, text="Send", command=self.sendMessage)
+        self.sendButton.pack(pady=5)
 
-            # run send and receive tasks concurrently
-            sendTask = asyncio.create_task(sendMessages(websocket, recipientAddress))
-            receiveTask = asyncio.create_task(receiveMessages(websocket))
+        # websocket and asyncio setup
+        self.loop = asyncio.get_event_loop()
+        self.websocket = None
 
-            # wait for both tasks to complete
-            await asyncio.gather(sendTask, receiveTask)
-            
-    except ConnectionRefusedError:
-        print("could not connect to websocket server. ensure the server is running and accessible.")
-    except Exception as e:
-        print("an unexpected error occurred:", e)
+        # schedule the asyncio task to start
+        self.root.after(100, self.startAsyncLoop)
+
+    async def connectWebsocket(self):
+        try:
+            self.websocket = await websockets.connect("ws://127.0.0.1:1977")
+            await self.websocket.send(json.dumps({"type": "selfAddress"}))
+            response = await self.websocket.recv()
+            print("connected to websocket")
+            await self.receiveMessages()  # start listening for incoming messages
+        except Exception as e:
+            print("connection error:", e)
+
+    async def receiveMessages(self):
+        try:
+            while True:
+                message = await self.websocket.recv()
+                data = json.loads(message)
+                self.displayMessage(f"Received: {data.get('message', '')}")
+        except websockets.exceptions.ConnectionClosed:
+            print("connection closed by the server.")
+
+    def displayMessage(self, message):
+        # update the chat display in a thread-safe manner
+        self.chatDisplay.config(state='normal')
+        self.chatDisplay.insert('end', message + "\n")
+        self.chatDisplay.config(state='disabled')
+        self.chatDisplay.see('end')
+
+    def sendMessage(self):
+        recipient = self.recipientEntry.get().strip()
+        message_content = self.messageEntry.get().strip()
+        if recipient and message_content:
+            # create a MixnetMessage instance
+            message = MixnetMessage(message_content, recipient)
+            if message.is_valid():
+                # send the message asynchronously
+                self.loop.create_task(self.asyncSendMessage(message))
+                self.displayMessage(f"Sent: {message_content}")
+                self.messageEntry.delete(0, 'end')
+            else:
+                print("invalid message or recipient")
+
+    async def asyncSendMessage(self, message):
+        if self.websocket:
+            # convert the MixnetMessage instance to dictionary for JSON serialization
+            await self.websocket.send(json.dumps(message.to_dict()))
+
+    def startAsyncLoop(self):
+        self.loop.create_task(self.connectWebsocket())
+        self.checkAsyncioLoop()
+
+    def checkAsyncioLoop(self):
+        # allow the asyncio loop to run periodically
+        self.loop.stop()  # stop loop if already running
+        self.loop.run_forever()  # run pending asyncio tasks
+        self.root.after(100, self.checkAsyncioLoop)  # check again after 100ms
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    root = tk.Tk()
+    app = AsyncTkApp(root)
+    root.mainloop()
+
