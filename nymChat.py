@@ -17,13 +17,13 @@ class MixnetMessage:
         }
 
 async def asyncInput(prompt=""):
-    """ asynchronous input to avoid blocking the main event loop """
+    # asynchronous input to avoid blocking the main event loop
     print(prompt, end="", flush=True)
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, input)
 
 async def sendMessages(websocket, recipientAddress):
-    """ function to handle sending messages asynchronously """
+    # function to handle sending messages asynchronously
     while True:
         messageContent = await asyncInput("Enter your message (or type 'exit' to quit): ")
         if messageContent.lower() == "exit":
@@ -36,7 +36,7 @@ async def sendMessages(websocket, recipientAddress):
         print("message sent!")
 
 async def receiveMessages(websocket):
-    """ function to handle receiving messages asynchronously """
+    # function to handle receiving messages asynchronously
     print("waiting for incoming messages...")
     try:
         while True:
