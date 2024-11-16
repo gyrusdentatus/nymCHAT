@@ -27,7 +27,7 @@ Python Messaging Client for secure, asynchronous messaging over the Nym Mixnet, 
 1. **Set up your Python environment**:
 - Clone this repository and navigate to the directory:
 ```
-git clone https://github.com/your-user/nymChat.git
+git clone https://github.com/code-zm/nymChat.git
 cd nymChat
 ```
 
