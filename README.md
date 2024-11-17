@@ -45,12 +45,12 @@ source venv/bin/activate
 - In a new terminal, run the Python script `python nymChat.py`
 
 5. **Enter recipient's Nym address**:
-- When prompted, enter the Nym address of the recipient you wish to communicate with.
+- Exchange Nym addresses with whoever you wish to communicate with. Simply enter it into the GUI and begin sending messages. 
 ---
 ## Script Overview
 
-- **Sending Messages**: Enter your message when prompted. To exit the messaging loop, type `'exit'`.
-- **Receiving Messages**: The script will display incoming messages from the Nym network in real-time.
+- **Sending Messages**: Enter your message into the GUI.
+- **Receiving Messages**: The script will display incoming messages from the Nym network in real-time as well as the messages you have sent.
 ---
 ## Troubleshooting
 
