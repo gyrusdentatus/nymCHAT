@@ -1,6 +1,6 @@
 # nymChat
 ---
-Python Messaging Client for secure messaging over the Nym Mixnet, a decentralized network designed for privacy.
+A Python Messaging Client that routes messages through the Nym Mixnet, protecting users from traffic metadata analysis.
 ---
 ## Prerequisites
 
