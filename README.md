@@ -52,8 +52,25 @@ source venv/bin/activate
 - **Sending Messages**: Enter your message into the GUI.
 - **Receiving Messages**: The script will display incoming messages from the Nym network in real-time as well as the messages you have sent.
 ---
-## Troubleshooting
 
+## How to Use testClient.py
+#### Run `testClient.py`
+Test Client Script. Start the script with this command:
+```
+python testClient.py
+```
+
+#### Register a Pseudonym:
+1. In the **client GUI**, click "Register."
+2. Enter a pseudonym and click "Register."
+3. The pseudonym will be sent to the server and added to the directory.
+
+#### Query a Pseudonym:
+1. In the **client GUI**, click "Send Query."
+2. Enter the pseudonym and your query message, then click "Send."
+3. The server will respond if the pseudonym exists, and you’ll see the response in the client GUI.
+
+## Troubleshooting
 If you encounter any connection issues, verify that:
 
 - The Nym client is running and accessible in the background.
