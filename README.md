@@ -78,5 +78,5 @@ If you encounter any connection issues, verify that:
 - Try restarting the nym-client if you run into issues! CTRL + C to stop it. 
 ---
 ## License
-This project is licensed under the MIT License.
+This project is licensed under the GNU General Public License v3
 
