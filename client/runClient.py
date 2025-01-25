@@ -1,7 +1,13 @@
-#!/usr/bin/env python3
+# main script
+#       1. Design Messages & Search Screen
+#       2. Implement message and search functionality
+#       3. test
+
+
 import os
 from nicegui import app, ui
 from dbUtils import SQLiteManager
+from mixnetMessages import MixnetMessage, SERVER_ADDRESS
 from cryptographyUtils import CryptoUtils
 from connectionUtils import WebSocketClient
 
@@ -23,39 +29,38 @@ def scan_for_users():
 
 
 async def register_user(username, first_name="", last_name=""):
-    """Register a new user."""
+    """Register a new user using MixnetMessage.register."""
+    # Generate key pair
     private_key, public_key = crypto_utils.generate_key_pair(username)
+
+    # Register the user in the database
     db_manager = SQLiteManager(f"{username}_client.db")
     db_manager.register_user(username, first_name, last_name)
-    await websocket_client.send_message({
-        "type": "register",
-        "username": username,
-        "public_key": public_key,
-    })
 
-    # Print success message to the terminal
+    # Create the register message using MixnetMessage
+    register_message = MixnetMessage.register(usernym=username, publicKey=public_key)
+    
+    # Send the registration message
+    await websocket_client.send_message(register_message)
     print(f"User {username} registered successfully!")
 
     # Refresh the username list
     scan_for_users()
-
-    # Navigate back to the main page
     ui.navigate.to("/")
-
-
+    
 async def login_user(username):
-    """Log in a user."""
+    """Log in a user using MixnetMessage.query."""
+    # Set the current user
     current_user["username"] = username
-    await websocket_client.send_message({
-        "type": "update",
-        "username": username,
-    })
 
-    # Print success message to the terminal
+    # Create the query message using MixnetMessage
+    query_message = MixnetMessage.query(usernym=username)
+    
+    # Send the query message
+    await websocket_client.send_message(query_message)
     print(f"Welcome back, {username}!")
     ui.navigate.to("/app")
-
-
+    
 # App Tabs
 def chats_tab():
     with ui.column().classes("items-center"):
@@ -159,5 +164,6 @@ async def startup_sequence():
         print(f"WebSocket connection failed: {e}")
 
 
-ui.run(host="127.0.0.1", port=8080)
+ui.run()
+
 
