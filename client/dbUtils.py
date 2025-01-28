@@ -1,13 +1,21 @@
 import sqlite3
 import json
+import os
 from datetime import datetime
 
 class SQLiteManager:
-    def __init__(self, db_name="nym_client.db"):
+    def __init__(self, username, storage_dir="storage"):
         """
         Initialize the database connection and create necessary tables.
+        :param username: The username of the client.
+        :param storage_dir: The base directory for storage.
         """
-        self.conn = sqlite3.connect(db_name)
+        user_dir = os.path.join(storage_dir, username)
+        if not os.path.exists(user_dir):
+            os.makedirs(user_dir)
+
+        db_path = os.path.join(user_dir, f"{username}_client.db")
+        self.conn = sqlite3.connect(db_path)
         self.create_global_tables()
 
     def create_global_tables(self):
@@ -150,4 +158,3 @@ class SQLiteManager:
         Close the database connection.
         """
         self.conn.close()
-

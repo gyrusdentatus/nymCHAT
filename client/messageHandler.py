@@ -4,6 +4,8 @@ from nicegui import ui
 from mixnetMessages import MixnetMessage
 from cryptographyUtils import CryptoUtils
 from connectionUtils import WebSocketClient
+from dbUtils import SQLiteManager
+import os
 
 class MessageHandler:
     def __init__(self, crypto_utils: CryptoUtils, websocket_client: WebSocketClient):
@@ -60,19 +62,35 @@ class MessageHandler:
 
     async def handle_registration_challenge(self, content):
         """Handle the registration challenge."""
+        # Step 1: Extract the nonce
         nonce = content.get("nonce")
+        if not nonce:
+            print("[ERROR] Received registration challenge without a nonce.")
+            return
+
         print(f"[INFO] Received registration challenge with nonce: {nonce}")
 
-        # Use the private key to sign the nonce
+        # Step 2: Retrieve the private key
         private_key = self.temporary_keys.get("private_key")
         if private_key is None:
             print("[ERROR] Private key not found in memory during registration.")
             return
 
-        signature = self.crypto_utils.sign_message_with_key(private_key, nonce)
-        response = MixnetMessage.registrationResponse(self.current_user["username"], signature)
-        await self.websocket_client.send_message(response)
-        print("[INFO] Challenge response sent.")
+        # Step 3: Sign the nonce
+        try:
+            signature = self.crypto_utils.sign_message_with_key(private_key, nonce)
+            print(f"[INFO] Successfully signed the nonce.")
+        except Exception as e:
+            print(f"[ERROR] Failed to sign the nonce: {e}")
+            return
+
+        # Step 4: Construct and send the response
+        try:
+            response = MixnetMessage.registrationResponse(self.current_user["username"], signature)
+            await self.websocket_client.send_message(response)
+            print("[INFO] Challenge response sent to the server.")
+        except Exception as e:
+            print(f"[ERROR] Failed to send the challenge response: {e}")
 
     async def handle_login_challenge(self, content):
         """Handle the login challenge."""
@@ -94,13 +112,25 @@ class MessageHandler:
         """Handle the server's registration response."""
         if content == "success":
             print("[INFO] Registration successful!")
-            # Convert the public key PEM string back to an object
-            public_key_pem = self.temporary_keys["public_key"]
-            public_key = load_pem_public_key(public_key_pem.encode())
 
             # Save the keys since registration succeeded
             username = self.current_user["username"]
-            self.crypto_utils.save_keys(username, self.temporary_keys["private_key"], public_key)
+            private_key = self.temporary_keys["private_key"]
+            public_key_pem = self.temporary_keys["public_key"]  # Public key is already in PEM format
+
+            try:
+                self.crypto_utils.save_keys(username, private_key, public_key_pem)
+                print(f"[INFO] Keys saved for user: {username}")
+            except Exception as e:
+                print(f"[ERROR] Failed to save keys: {e}")
+                return
+
+            # Initialize the user's database
+            try:
+                SQLiteManager(username)
+                print(f"[INFO] Database initialized for user: {username}")
+            except Exception as e:
+                print(f"[ERROR] Failed to initialize database: {e}")
         else:
             print(f"[ERROR] Registration failed: {content}")
             ui.notify(f"Registration failed: {content}")

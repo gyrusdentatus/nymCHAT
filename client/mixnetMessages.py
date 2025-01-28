@@ -37,6 +37,22 @@ class MixnetMessage:
         }
 
     @staticmethod
+    def login(usernym):
+        """
+        Prepare the message for user login.
+        :param usernym: The username to log in.
+        :return: A dictionary formatted as a login message.
+        """
+        encapsulatedMessage = json.dumps({"action": "login", "usernym": usernym})
+        return {
+            "type": "sendAnonymous",
+            "message": encapsulatedMessage,
+            "recipient": SERVER_ADDRESS,
+            "replySurbs": 10,
+        }
+
+
+    @staticmethod
     def update(field, value, signature):
         """
         Prepare the message for updating user information.

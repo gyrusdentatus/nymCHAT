@@ -13,14 +13,23 @@ message_handler = MessageHandler(crypto_utils, websocket_client)
 registration_response_queue = Queue()
 
 # Directory to check for `*_client.db` files
-DB_DIR = "./"
+DB_DIR = "./storage"
 usernames = []
 
 def scan_for_users():
-    """Scan for `*_client.db` files and extract usernames."""
+    """Scan the `storage` folder for user directories and extract usernames."""
     global usernames
-    db_files = [f for f in os.listdir(DB_DIR) if f.endswith("_client.db")]
-    usernames = [os.path.splitext(f)[0].replace("_client", "") for f in db_files]
+    if not os.path.exists(DB_DIR):
+        os.makedirs(DB_DIR)  # Ensure the storage directory exists
+        print("[INFO] No users found. `storage` directory created.")
+        return
+
+    user_dirs = [
+        d for d in os.listdir(DB_DIR)
+        if os.path.isdir(os.path.join(DB_DIR, d))
+    ]
+    usernames = user_dirs
+    print(f"[INFO] Found users: {usernames}")
 
 # App Tabs and Pages
 def chats_tab():
@@ -74,8 +83,11 @@ def main_page():
 def login_page():
     """Login page with dropdown for existing users."""
     ui.label("Login").classes("text-2xl font-bold mb-4")
+
     if usernames:
-        selected_user = ui.select(usernames, label="Select a User").props("outlined").classes("mb-2")
+        selected_user = ui.select(
+            usernames, label="Select a User"
+        ).props("outlined").classes("mb-2")
 
         async def handle_login():
             await message_handler.login_user(selected_user.value)
