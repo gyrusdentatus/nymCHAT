@@ -31,22 +31,6 @@ def scan_for_users():
     usernames = user_dirs
     print(f"[INFO] Found users: {usernames}")
 
-# App Tabs and Pages
-def chats_tab():
-    with ui.column().classes("items-center"):
-        ui.label("Chats").classes("text-2xl font-bold mb-4")
-        ui.label("This is the Chats tab. Here you can display and manage chats.")
-
-def contacts_tab():
-    with ui.column().classes("items-center"):
-        ui.label("Contacts").classes("text-2xl font-bold mb-4")
-        ui.label("This is the Contacts tab. Here you can display and manage contacts.")
-
-def settings_tab():
-    with ui.column().classes("items-center"):
-        ui.label("Settings").classes("text-2xl font-bold mb-4")
-        ui.label("This is the Settings tab. Adjust your preferences here.")
-
 @ui.page('/app')
 def app_page():
     """Main app page with menu and tabs."""
@@ -66,11 +50,11 @@ def app_page():
 
     with ui.tab_panels(tabs, value="Chats").classes("w-full"):
         with ui.tab_panel("Chats"):
-            chats_tab()
+            ui.label("This is the Chats tab.")
         with ui.tab_panel("Contacts"):
-            contacts_tab()
+            ui.label("This is the Contacts tab.")
         with ui.tab_panel("Settings"):
-            settings_tab()
+            ui.label("This is the Settings tab.")
 
 @ui.page('/')
 def main_page():
@@ -84,17 +68,30 @@ def login_page():
     """Login page with dropdown for existing users."""
     ui.label("Login").classes("text-2xl font-bold mb-4")
 
+    scan_for_users()
+
     if usernames:
         selected_user = ui.select(
             usernames, label="Select a User"
         ).props("outlined").classes("mb-2")
 
+        spinner = ui.spinner(size='lg').props('hidden').classes("mt-4")  # Initially hidden
+
         async def handle_login():
+            spinner.props(remove='hidden')  # Show spinner
             await message_handler.login_user(selected_user.value)
+
+            print("[INFO] Waiting for login handshake to complete...")
+            await message_handler.login_complete.wait()  # Wait for confirmation before redirecting
+
+            spinner.props('hidden')  # Hide spinner
+            print("[INFO] Login fully completed. Redirecting to /app...")
+            ui.navigate.to("/app")  # Redirect only when done
 
         ui.button("Login", on_click=handle_login).classes("mt-4")
     else:
         ui.label("No users found. Please register first.")
+    
     ui.button("Back to Main Menu", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
 
 @ui.page('/register')
@@ -104,6 +101,8 @@ def register_page():
     username_input = ui.input(label="Username").props("outlined").classes("mb-2")
     first_name_input = ui.input(label="First Name (optional)").props("outlined").classes("mb-2")
     last_name_input = ui.input(label="Last Name (optional)").props("outlined").classes("mb-2")
+
+    spinner = ui.spinner(size='lg').props('hidden').classes("mt-4")  # Initially hidden
 
     async def register():
         username = username_input.value
@@ -115,7 +114,15 @@ def register_page():
             ui.notify("Username is required!")
             return
 
+        spinner.props(remove='hidden')  # Show spinner while waiting
         await message_handler.register_user(username, first_name, last_name)
+
+        print("[INFO] Waiting for registration handshake to complete...")
+        await message_handler.registration_complete.wait()  # Wait for confirmation before redirecting
+
+        spinner.props('hidden')  # Hide spinner after registration
+        print("[INFO] Registration fully completed. Redirecting to login page...")
+        ui.navigate.to("/login")  # Redirect only when done
 
     ui.button("Register", on_click=register).classes("mt-4")
     ui.button("Back to Main Menu", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
