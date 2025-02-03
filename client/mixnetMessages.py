@@ -1,7 +1,7 @@
 import json
 
 # Global variable for the server address
-SERVER_ADDRESS = "8V1Mtou4BBDJdpPfdt3eqhQdxauSVEqp8BRvU3YZGPPZ.BinUeqBzaHEsvpicBi7GmbZverhXZJBfF68v47c1GccV@69euaLVrZrgqXVge95BPzAanymqYdk6UgubmmGrHw8Sp"
+SERVER_ADDRESS = "HGArbcxFvcVtkzNXnpVVcYxuKHCUw6XXgnguwgtr8E48.6NbUjrYGFiXKSfetoa7cGRDTCPanMc2qAQx2i7Z2weah@3KPGnXGtrdYbUVesdoeAqSVpRE6GNL3Vz6dJEyTMMyn7"
 
 class MixnetMessage:
 
@@ -12,7 +12,7 @@ class MixnetMessage:
         :param usernym: The username to query.
         :return: A dictionary formatted as a query message.
         """
-        encapsulatedMessage = json.dumps({"action": "query", "target": usernym})
+        encapsulatedMessage = json.dumps({"action": "query", "username": usernym})
         return {
             "type": "sendAnonymous",
             "message": encapsulatedMessage,
