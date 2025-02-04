@@ -1,7 +1,8 @@
+# messageHandler.py
+
 import json
 import asyncio
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
-from nicegui import ui
+
 from mixnetMessages import MixnetMessage
 from cryptographyUtils import CryptoUtils
 from connectionUtils import WebSocketClient
@@ -13,173 +14,152 @@ class MessageHandler:
         self.websocket_client = websocket_client
         self.current_user = {"username": None}
         self.temporary_keys = {"private_key": None, "public_key": None}
-        self.db_manager = None  # Will hold the SQLiteManager instance after registration/login
+        self.db_manager = None  # Will be set after login/registration
 
-        # Events for registration/login completion
+        # Wait-for-completion events
         self.registration_complete = asyncio.Event()
         self.login_complete = asyncio.Event()
 
-        # For user query results
+        # Query flow
         self.query_result_event = asyncio.Event()
-        self.query_result = None  # Will hold the latest query result from the server
+        self.query_result = None
+
+        # [OPTIONAL] references to UI or chat state
+        self.chat_messages = None
+        self.chat_list = None
+        self.active_chat = None
+        self.render_chat_fn = None
+        self.chat_container = None
+
+    def set_ui_state(self, messages, chat_list, get_active_chat, render_chat, chat_container):
+        """
+        Optionally call this from runClient.py if you want to update UI state
+        directly from handle_incoming_message. 
+        'get_active_chat' can be a function or a reference to the global variable.
+        """
+        self.chat_messages = messages
+        self.chat_list = chat_list
+        self._get_active_chat = get_active_chat
+        self.render_chat_fn = render_chat
+        self.chat_container = chat_container
 
     # --------------------------------------------------------------------------
     # Registration & Login
     # --------------------------------------------------------------------------
     async def register_user(self, username, first_name="", last_name=""):
-        """Register a new user with the handshake protocol."""
         try:
             self.current_user["username"] = username
-            self.registration_complete.clear()  # Reset the event
+            self.registration_complete.clear()
 
             private_key, public_key = self.crypto_utils.generate_key_pair(username)
             self.temporary_keys["private_key"] = private_key
             self.temporary_keys["public_key"] = public_key
             print(f"[INFO] Keypair generated for user: {username}")
 
-            # Send a 'register' message to the server
-            register_message = MixnetMessage.register(usernym=username, publicKey=public_key)
-            await self.websocket_client.send_message(register_message)
-            print(f"[INFO] Registration message sent for username: {username}")
-            print("[INFO] Waiting for server challenge...")
+            # Send a 'register' message
+            register_msg = MixnetMessage.register(usernym=username, publicKey=public_key)
+            await self.websocket_client.send_message(register_msg)
+            print("[INFO] Registration message sent; waiting for challenge...")
 
-            # Wait for the server's final registration response
             await self.registration_complete.wait()
 
         except Exception as e:
-            print(f"[ERROR] An error occurred during registration: {e}")
+            print(f"[ERROR] Registration error: {e}")
 
     async def login_user(self, username):
-        """Login an existing user with the handshake protocol."""
         try:
             self.current_user["username"] = username
-            self.login_complete.clear()  # Reset login event
+            self.login_complete.clear()
 
             private_key = self.crypto_utils.load_private_key(username)
             if not private_key:
-                print(f"[ERROR] Could not find private key for username: {username}")
+                print(f"[ERROR] No private key for {username}")
                 return
 
             self.temporary_keys["private_key"] = private_key
-            print(f"[INFO] Private key loaded for user: {username}")
+            print(f"[INFO] Loaded private key for {username}")
 
-            # Send a 'login' message to the server
-            login_message = MixnetMessage.login(username)
-            await self.websocket_client.send_message(login_message)
-            print(f"[INFO] Login message sent for username: {username}")
-            print("[INFO] Waiting for server challenge...")
+            msg = MixnetMessage.login(username)
+            await self.websocket_client.send_message(msg)
+            print("[INFO] Login message sent; waiting for challenge...")
 
-            # Wait for the server's final login response
             await self.login_complete.wait()
 
         except Exception as e:
-            print(f"[ERROR] An error occurred during login: {e}")
+            print(f"[ERROR] Login error: {e}")
 
-    # --------------------------------------------------------------------------
-    # Registration / Login Challenge Handlers
-    # --------------------------------------------------------------------------
     async def handle_registration_challenge(self, content):
-        """Handle the server's registration challenge by signing the provided nonce."""
         nonce = content.get("nonce")
         if not nonce:
-            print("[ERROR] Received registration challenge without a nonce.")
+            print("[ERROR] No nonce in registration challenge.")
             return
-
-        print(f"[INFO] Received registration challenge with nonce: {nonce}")
         private_key = self.temporary_keys.get("private_key")
-        if private_key is None:
-            print("[ERROR] Private key not found in memory during registration.")
+        if not private_key:
+            print("[ERROR] No private key for registration.")
             return
 
         try:
             signature = self.crypto_utils.sign_message_with_key(private_key, nonce)
-            print(f"[INFO] Successfully signed the nonce.")
+            resp = MixnetMessage.registrationResponse(self.current_user["username"], signature)
+            await self.websocket_client.send_message(resp)
+            print("[INFO] Registration challenge response sent.")
         except Exception as e:
-            print(f"[ERROR] Failed to sign the nonce: {e}")
-            return
-
-        try:
-            response = MixnetMessage.registrationResponse(self.current_user["username"], signature)
-            await self.websocket_client.send_message(response)
-            print("[INFO] Challenge response sent to the server.")
-        except Exception as e:
-            print(f"[ERROR] Failed to send the challenge response: {e}")
+            print(f"[ERROR] Signing registration nonce: {e}")
 
     async def handle_login_challenge(self, content):
-        """Handle the server's login challenge by signing the provided nonce."""
         nonce = content.get("nonce")
         if not nonce:
-            print("[ERROR] Received login challenge without a nonce.")
+            print("[ERROR] No nonce in login challenge.")
             return
-
-        print(f"[INFO] Received login challenge with nonce: {nonce}")
         private_key = self.temporary_keys.get("private_key")
-        if private_key is None:
-            print("[ERROR] Private key not found in memory during login.")
+        if not private_key:
+            print("[ERROR] No private key for login.")
             return
 
         try:
             signature = self.crypto_utils.sign_message_with_key(private_key, nonce)
-            print(f"[INFO] Successfully signed the nonce.")
+            resp = MixnetMessage.loginResponse(self.current_user["username"], signature)
+            await self.websocket_client.send_message(resp)
+            print("[INFO] Login challenge response sent.")
         except Exception as e:
-            print(f"[ERROR] Failed to sign the nonce: {e}")
-            return
+            print(f"[ERROR] Signing login nonce: {e}")
 
-        try:
-            response = MixnetMessage.loginResponse(self.current_user["username"], signature)
-            await self.websocket_client.send_message(response)
-            print("[INFO] Login response sent to the server.")
-        except Exception as e:
-            print(f"[ERROR] Failed to send the login response: {e}")
-
-    # --------------------------------------------------------------------------
-    # Registration / Login Response Handlers
-    # --------------------------------------------------------------------------
     async def handle_registration_response(self, content):
-        """Handle the final server response for registration."""
         if content == "success":
             print("[INFO] Registration successful!")
             username = self.current_user["username"]
-            private_key = self.temporary_keys["private_key"]
-            public_key_pem = self.temporary_keys["public_key"]
+            priv_k = self.temporary_keys["private_key"]
+            pub_k = self.temporary_keys["public_key"]
 
-            # Save the keys locally
             try:
-                self.crypto_utils.save_keys(username, private_key, public_key_pem)
-                print(f"[INFO] Keys saved for user: {username}")
+                self.crypto_utils.save_keys(username, priv_k, pub_k)
+                print("[INFO] Keys saved.")
             except Exception as e:
-                print(f"[ERROR] Failed to save keys: {e}")
+                print(f"[ERROR] Saving keys: {e}")
                 return
 
-            # Initialize the user database
             try:
                 self.db_manager = SQLiteManager(username)
-                print(f"[INFO] Database initialized for user: {username}")
+                print("[INFO] DB initialized for user:", username)
             except Exception as e:
-                print(f"[ERROR] Failed to initialize database: {e}")
+                print(f"[ERROR] DB init: {e}")
                 return
 
-            # Signal that registration is complete
             self.registration_complete.set()
         else:
             print(f"[ERROR] Registration failed: {content}")
 
     async def handle_login_response(self, content):
-        """Handle the final server response for login."""
         if content == "success":
             print("[INFO] Login successful!")
             username = self.current_user["username"]
-
-            # Initialize the user database
             try:
                 self.db_manager = SQLiteManager(username)
-                print(f"[INFO] Database initialized for user: {username}")
+                print("[INFO] DB manager created.")
                 self.db_manager.create_user_tables(username)
-
             except Exception as e:
-                print(f"[ERROR] Failed to initialize database: {e}")
+                print(f"[ERROR] DB init: {e}")
 
-            # Signal that login is complete
             self.login_complete.set()
         else:
             print(f"[ERROR] Login failed: {content}")
@@ -187,11 +167,7 @@ class MessageHandler:
     # --------------------------------------------------------------------------
     # Sending Direct Messages
     # --------------------------------------------------------------------------
-    async def send_direct_message(self, recipient_username: str, message_content: str):
-        """
-        Encapsulate and send a direct message to 'recipient_username',
-        then store the outgoing message in the DB.
-        """
+    async def send_direct_message(self, recipient_username, message_content):
         if not recipient_username or not message_content.strip():
             return
 
@@ -202,25 +178,16 @@ class MessageHandler:
         }
         payload_str = json.dumps(payload)
 
-        private_key = self.temporary_keys.get("private_key")
+        private_key = self.crypto_utils.load_private_key(self.current_user["username"])
         if not private_key:
-            print("[ERROR] No private key in memory. Cannot send message.")
+            print("[ERROR] No private key to send message.")
             return
 
-        # Sign the message payload
         signature = self.crypto_utils.sign_message_with_key(private_key, payload_str)
+        msg = MixnetMessage.send(content=payload_str, signature=signature)
+        await self.websocket_client.send_message(msg)
+        print(f"[INFO] Sent direct message to {recipient_username}")
 
-        # Construct the final mixnet message
-        mixnet_msg = MixnetMessage.send(
-            usernym=recipient_username,
-            content=payload_str,
-            signature=signature
-        )
-        # Send through the WebSocket
-        await self.websocket_client.send_message(mixnet_msg)
-        print(f"[INFO] Sent direct message to {recipient_username} via mixnet.")
-
-        # Store outgoing message in the DB
         if self.db_manager:
             self.db_manager.save_message(
                 self.current_user["username"],
@@ -229,112 +196,137 @@ class MessageHandler:
                 message=message_content
             )
         else:
-            print("[WARNING] DB manager not initialized; outgoing message not saved.")
+            print("[WARNING] DB manager not init; outgoing message not saved.")
+
+    async def handle_send_response(self, content):
+        # Could display a UI notification if desired
+        pass
 
     # --------------------------------------------------------------------------
-    # Query (User Search) Methods
+    # Query
     # --------------------------------------------------------------------------
-    async def query_user(self, target_username: str):
-        """
-        Send a query to the server to see if 'target_username' exists.
-        Wait for the server's 'queryResponse' to populate self.query_result.
-        Returns either a dict with user data or "No user found" or None (on error).
-        """
+    async def query_user(self, target_username):
         try:
             self.query_result_event.clear()
             self.query_result = None
 
-            query_msg = MixnetMessage.query(usernym=target_username)
-            await self.websocket_client.send_message(query_msg)
-            print(f"[INFO] Sent query for username: {target_username}")
+            msg = MixnetMessage.query(target_username)
+            await self.websocket_client.send_message(msg)
+            print(f"[INFO] Sent query for user: {target_username}")
 
-            # Wait until the server response arrives
             await self.query_result_event.wait()
             return self.query_result
         except Exception as e:
-            print(f"[ERROR] query_user exception: {e}")
+            print(f"[ERROR] query_user: {e}")
             return None
 
     async def handle_query_response(self, content):
-        """
-        Handle the server's query response. 'content' might be a user info dict
-        or a string like 'No user found'.
-        """
         self.query_result = content
         self.query_result_event.set()
-        print(f"[INFO] Received queryResponse: {content}")
+        print(f"[INFO] queryResponse: {content}")
 
     # --------------------------------------------------------------------------
-    # Handling Incoming Messages
+    # Handling Incoming Messages (SINGLE CALLBACK)
     # --------------------------------------------------------------------------
     async def handle_incoming_message(self, data):
         """
-        Main entry point for all inbound messages from the WebSocket.
+        The single callback from `connectionUtils.WebSocketClient`.
+        Does:
+        1) Check if challenge or direct message
+        2) DB logic
+        3) UI updates (if you have set_ui_state references)
         """
         message_type = data.get("type")
-        encapsulated_message = data.get("message")
-
-        if message_type == "received":
-            try:
-                encapsulated_data = json.loads(encapsulated_message)
-                action = encapsulated_data.get("action")
-                context = encapsulated_data.get("context")
-                content = encapsulated_data.get("content")
-
-                # Attempt to parse 'content' if it's a JSON string
-                if isinstance(content, str):
-                    try:
-                        content = json.loads(content)
-                    except json.JSONDecodeError:
-                        pass
-
-                # --------------------- Challenge flow ----------------------
-                if action == "challenge":
-                    if context == "registration":
-                        await self.handle_registration_challenge(content)
-                    elif context == "login":
-                        await self.handle_login_challenge(content)
-                    else:
-                        print(f"[WARNING] Unhandled challenge context: {context}")
-
-                # --------------------- Challenge Response -------------------
-                elif action == "challengeResponse":
-                    if context == "registration":
-                        await self.handle_registration_response(content)
-                    elif context == "login":
-                        await self.handle_login_response(content)
-                    else:
-                        print(f"[WARNING] Unhandled challengeResponse context: {context}")
-
-                # --------------------- Direct Message -----------------------
-                elif action == "send":
-                    # Incoming direct chat message
-                    if isinstance(content, dict):
-                        from_user = content.get("sender")
-                        msg_body = content.get("body")
-                        if from_user and msg_body and self.db_manager:
-                            self.db_manager.save_message(
-                                self.current_user["username"],
-                                contact_username=from_user,
-                                msg_type='from',
-                                message=msg_body
-                            )
-                            print(f"[INFO] Stored incoming message from {from_user} in DB.")
-                        else:
-                            print("[WARNING] Missing fields or DB manager not initialized for 'send' action.")
-                    else:
-                        print("[WARNING] 'content' is not a dict in 'send' action.")
-
-                # --------------------- Query Response -----------------------
-                elif action == "queryResponse" and context == "query":
-                    await self.handle_query_response(content)
-
-                # --------------------- Unknown -----------------------------
-                else:
-                    print(f"[WARNING] Unknown or unhandled action '{action}', context='{context}'")
-
-            except json.JSONDecodeError:
-                print(f"[ERROR] Failed to decode encapsulated message: {encapsulated_message}")
-
-        else:
+        if message_type != "received":
             print(f"[WARNING] Unknown message type: {message_type}")
+            return
+
+        try:
+            encapsulated_data = json.loads(data.get("message", "{}"))
+            action = encapsulated_data.get("action")
+            context = encapsulated_data.get("context")
+            content = encapsulated_data.get("content")
+
+            # If 'content' is a JSON string, try decoding it
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except json.JSONDecodeError:
+                    pass
+
+            if action == "challenge":
+                if context == "registration":
+                    await self.handle_registration_challenge(content)
+                elif context == "login":
+                    await self.handle_login_challenge(content)
+                else:
+                    print(f"[WARNING] Unhandled challenge context: {context}")
+
+            elif action == "challengeResponse":
+                if context == "registration":
+                    await self.handle_registration_response(content)
+                elif context == "login":
+                    await self.handle_login_response(content)
+                else:
+                    print(f"[WARNING] Unhandled challengeResponse context: {context}")
+
+            elif action == "incomingMessage":
+                if isinstance(content, dict):
+                    from_user = content.get("from")
+                    msg_body = content.get("content")
+
+                    if from_user and msg_body and self.db_manager:
+                        # Save message to database
+                        self.db_manager.save_message(
+                            self.current_user["username"],
+                            from_user,
+                            'from',
+                            msg_body
+                        )
+                        print(f"[INFO] Stored incoming message from {from_user} in DB.")
+
+                        # Ensure in-memory storage is updated
+                        if self.chat_messages is not None:
+                            if from_user not in self.chat_messages:
+                                self.chat_messages[from_user] = []
+                            stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            self.chat_messages[from_user].append((from_user, msg_body, stamp))
+
+                            # Check if the message is for the currently open chat
+                            currently_active_chat = self._get_active_chat()
+                            if from_user == currently_active_chat:
+                                print(f"[INFO] Updating UI for chat with {from_user}")
+
+                                # Ensure UI refresh function is being called properly
+                                if self.render_chat_fn:
+                                    try:
+                                        self.render_chat_fn.refresh(
+                                            self.current_user["username"],
+                                            currently_active_chat,
+                                            self.chat_messages
+                                        )
+                                        print("[INFO] Chat UI refreshed successfully.")
+                                    except Exception as e:
+                                        print(f"[ERROR] Failed to refresh chat UI: {e}")
+                            else:
+                                print(f"[INFO] Message stored but {from_user} is not active chat.")
+                        else:
+                            print("[WARNING] chat_messages is None; UI might not be initialized.")
+
+                    else:
+                        print("[WARNING] Missing fields or DB manager not ready.")
+                else:
+                    print("[WARNING] 'content' not a dict in 'incomingMessage' action.")
+
+            elif action == "queryResponse" and context == "query":
+                await self.handle_query_response(content)
+
+            elif action == "sendResponse" and context == "chat":
+                await self.handle_send_response(content)
+
+            else:
+                print(f"[WARNING] Unknown or unhandled action '{action}', context='{context}'")
+
+        except json.JSONDecodeError:
+            print("[ERROR] Could not decode the message content.")
+

@@ -70,7 +70,7 @@ class MixnetMessage:
         }
 
     @staticmethod
-    def send(usernym, content, signature):
+    def send(content, signature):
         """
         Prepare the message for sending a direct message.
         :param usernym: The recipient's username.
@@ -78,7 +78,7 @@ class MixnetMessage:
         :param signature: The signature of the message.
         :return: A dictionary formatted as a send message.
         """
-        encapsulatedMessage = json.dumps({"action": "send", "target": usernym, "content": content, "signature": signature})
+        encapsulatedMessage = json.dumps({"action": "send", "content": content, "signature": signature})
         return {
             "type": "sendAnonymous",
             "message": encapsulatedMessage,
