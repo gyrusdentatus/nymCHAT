@@ -153,71 +153,73 @@ async def send_message(text_input):
 ###############################################################################
 @ui.page('/')
 def main_page():
-    ui.label("Welcome to the Nym Client").classes("text-3xl font-bold mb-8")
-    ui.button("Login", on_click=lambda: ui.navigate.to("/login")).classes("mb-2")
-    ui.button("Register", on_click=lambda: ui.navigate.to("/register"))
+    with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+        ui.label("Welcome to the Nym Client").classes("text-3xl font-bold mb-8")
+        ui.button("Login", on_click=lambda: ui.navigate.to("/login")).classes("mb-2")
+        ui.button("Register", on_click=lambda: ui.navigate.to("/register"))
 
 
 @ui.page('/login')
 def login_page():
-    ui.label("Login").classes("text-2xl font-bold mb-4")
-    scan_for_users()
+    with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+        ui.label("Login").classes("text-2xl font-bold mb-4")
+        scan_for_users()
 
-    if usernames:
-        user_select = ui.select(usernames, label="Select a User").props("outlined").classes("mb-2")
-        spin = ui.spinner(size='lg').props('hidden').classes("mt-4")
+        if usernames:
+            user_select = ui.select(usernames, label="Select a User").props("outlined").classes("mb-2")
+            spin = ui.spinner(size='lg').props('hidden').classes("mt-4 justify-center")
 
-        async def do_login():
-            if not user_select.value:
-                ui.notify("Please select a user.")
-                return
-            spin.props(remove='hidden')
+            async def do_login():
+                if not user_select.value:
+                    ui.notify("Please select a user.")
+                    return
+                spin.props(remove='hidden')
 
-            await message_handler.login_user(user_select.value)
-            await message_handler.login_complete.wait()
+                await message_handler.login_user(user_select.value)
+                await message_handler.login_complete.wait()
 
-            message_handler.set_ui_state(messages, chat_list, get_active_chat, render_chat_messages, chat_messages_container)
+                message_handler.set_ui_state(messages, chat_list, get_active_chat, render_chat_messages, chat_messages_container)
 
-            # Once login is finished, load chat data
-            load_chats_from_db()
+                # Once login is finished, load chat data
+                load_chats_from_db()
 
-            spin.props('hidden')
-            ui.navigate.to("/app")
+                spin.props('hidden')
+                ui.navigate.to("/app")
 
-        ui.button("Login", on_click=do_login).classes("mt-4")
-    else:
-        ui.label("No users found. Please register first.")
+            ui.button("Login", on_click=do_login).classes("mt-4")
+        else:
+            ui.label("No users found. Please register first.")
 
-    ui.button("Back", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
-
+        ui.button("Back", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
 
 @ui.page('/register')
 def register_page():
-    ui.label("Register a New User").classes("text-2xl font-bold mb-4")
-    user_in = ui.input(label="Username").props("outlined").classes("mb-2")
-    first_in = ui.input(label="First Name (optional)").props("outlined").classes("mb-2")
-    last_in = ui.input(label="Last Name (optional)").props("outlined").classes("mb-2")
+    with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+        ui.label("Register a New User").classes("text-2xl font-bold mb-4")
+        user_in = ui.input(label="Username").props("outlined").classes("mb-2")
+        first_in = ui.input(label="First Name (optional)").props("outlined").classes("mb-2")
+        last_in = ui.input(label="Last Name (optional)").props("outlined").classes("mb-2")
 
-    spin = ui.spinner(size='lg').props('hidden').classes("mt-4")
+        spin = ui.spinner(size='lg').props('hidden').classes("mt-4")
 
-    async def do_register():
-        username = user_in.value.strip()
-        first_n = first_in.value
-        last_n = last_in.value
-        if not username:
-            ui.notify("Username is required!")
-            return
+        async def do_register():
+            username = user_in.value.strip()
+            first_n = first_in.value
+            last_n = last_in.value
+            if not username:
+                ui.notify("Username is required!")
+                return
 
-        spin.props(remove='hidden')
-        await message_handler.register_user(username, first_n, last_n)
-        await message_handler.registration_complete.wait()
+            spin.props(remove='hidden')
+            await message_handler.register_user(username, first_n, last_n)
+            await message_handler.registration_complete.wait()
 
-        spin.props('hidden')
-        ui.notify("Registration completed! Please login.")
-        ui.navigate.to("/login")
+            spin.props('hidden')
+            ui.notify("Registration completed! Please login.")
+            ui.navigate.to("/login")
 
-    ui.button("Register", on_click=do_register).classes("mt-4")
-    ui.button("Back", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
+        ui.button("Register", on_click=do_register).classes("mt-4")
+        ui.button("Back", on_click=lambda: ui.navigate.to("/"))
 
 
 @ui.page('/app')
@@ -280,61 +282,53 @@ def search_page():
     """User Search Page for queries."""
     ui.add_css('body { background-color: #121212; color: white; }')
 
-    global profile_container
-    profile_container = ui.column().classes('mt-4')
+    ui.header().classes('w-full bg-gray-900 text-white p-4 items-center justify-between')
+    ui.button('← Back to Chat', on_click=lambda: ui.navigate.to('/app')).classes('bg-gray-700 text-white p-2 rounded')
+    
+    with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 w-full items-start p-4'):
+        with ui.row().classes('gap-2 bg-gray-800 p-4 rounded-lg shadow-lg w-full items-center justify-center'):
+            search_in = ui.input(placeholder='Enter username...').props('rounded outlined input-class=mx-3').classes('bg-gray-700 text-white p-2 rounded-lg w-full')
+            ui.button('Search', on_click=lambda: asyncio.create_task(do_search())).classes('bg-blue-500 text-white p-2 rounded')
 
-    async def do_search():
-        username = search_in.value.strip()
-        with profile_container:
-            profile_container.clear()
+        global profile_container
+        profile_container = ui.column().classes('mt-4')
 
-            if not username:
-                ui.notify("Enter a username to search.")
-                return
+        async def do_search():
+            username = search_in.value.strip()
+            with profile_container:
+                profile_container.clear()
 
-            ui.notify(f"Searching for '{username}'...")
+                if not username:
+                    ui.notify("Enter a username to search.")
+                    return
 
-        # Ask the server
-        result = await message_handler.query_user(username)
+                ui.notify(f"Searching for '{username}'...")
 
-        with profile_container:
-            if result is None:
-                ui.notify("Error or no response from server.")
-                return
+            result = await message_handler.query_user(username)
 
-            if isinstance(result, str):
-                ui.notify(result)
-            elif isinstance(result, dict):
-                user_data = result
-                with ui.card().classes('p-4 bg-gray-800 text-white rounded-lg shadow-lg w-80'):
-                    ui.label(f"Username: {user_data.get('username') or 'N/A'}").classes('text-xl font-bold')
-                    ui.label(f"First Name: {user_data.get('firstName') or ''}")
-                    ui.label(f"Last Name: {user_data.get('lastName') or ''}")
-                    partial_key = (user_data.get('publicKey') or '')[:50]
-                    ui.label(f"Public Key (partial): {partial_key}...")
+            with profile_container:
+                if result is None:
+                    ui.notify("Error or no response from server.")
+                    return
 
-                    def start_chat():
-                        # If we want to add them to chat_list
-                        new_chat = {"id": user_data["username"], "name": user_data["username"]}
-                        if new_chat not in chat_list:
-                            chat_list.append(new_chat)
-                        ui.navigate.to('/app')
+                if isinstance(result, str):
+                    ui.notify(result)
+                elif isinstance(result, dict):
+                    user_data = result
+                    with ui.card().classes('p-4 bg-gray-800 text-white rounded-lg shadow-lg w-80'):
+                        ui.label(f"Username: {user_data.get('username') or 'N/A'}").classes('text-xl font-bold')
+                        partial_key = (user_data.get('publicKey') or '')[:50]
+                        ui.label(f"Public Key (partial): {partial_key}...")
 
-                    ui.button('Start Chat', on_click=start_chat).classes('bg-green-500 text-white p-2 mt-2 rounded')
-            else:
-                ui.notify("Unexpected response format from server.")
+                        def start_chat():
+                            new_chat = {"id": user_data["username"], "name": user_data["username"]}
+                            if new_chat not in chat_list:
+                                chat_list.append(new_chat)
+                            ui.navigate.to('/app')
 
-    with ui.column().classes('w-full h-screen flex justify-center items-center gap-4'):
-        with ui.row().classes('w-full bg-gray-900 text-white p-4 items-center justify-between'):
-            ui.button('← Back to Chat', on_click=lambda: ui.navigate.to('/')) \
-                .classes('bg-gray-700 text-white p-2 rounded')
-
-        with ui.row().classes('gap-2 bg-gray-800 p-4 rounded-lg shadow-lg'):
-            search_in = ui.input(placeholder='Enter username...') \
-                .props('rounded outlined input-class=mx-3') \
-                .classes('bg-gray-700 text-white p-2 rounded-lg w-64')
-            ui.button('Search', on_click=lambda: asyncio.create_task(do_search())) \
-                .classes('bg-blue-500 text-white p-2 rounded')
+                        ui.button('Start Chat', on_click=start_chat).classes('bg-green-500 text-white p-2 mt-2 rounded')
+                else:
+                    ui.notify("Unexpected response format from server.")
 
 
 ###############################################################################
@@ -368,4 +362,4 @@ async def startup_sequence():
     ui.navigate.to("/")
 
 
-ui.run()
+ui.run(dark=True)

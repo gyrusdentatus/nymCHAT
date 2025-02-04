@@ -2,6 +2,7 @@
 
 import json
 import asyncio
+from datetime import datetime
 
 from mixnetMessages import MixnetMessage
 from cryptographyUtils import CryptoUtils
@@ -272,8 +273,8 @@ class MessageHandler:
 
             elif action == "incomingMessage":
                 if isinstance(content, dict):
-                    from_user = content.get("from")
-                    msg_body = content.get("content")
+                    from_user = content.get("sender")
+                    msg_body = content.get("body")
 
                     if from_user and msg_body and self.db_manager:
                         # Save message to database
