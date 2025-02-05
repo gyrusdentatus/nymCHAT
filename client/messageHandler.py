@@ -30,9 +30,11 @@ class MessageHandler:
         self.chat_list = None
         self.active_chat = None
         self.render_chat_fn = None
+        self.chat_list_sidebar_fn = None  # 🔹 Added for refreshing the chat list sidebar
         self.chat_container = None
+        self.new_message_callback = None  # 🔹 To notify UI of new messages
 
-    def set_ui_state(self, messages, chat_list, get_active_chat, render_chat, chat_container):
+    def set_ui_state(self, messages, chat_list, get_active_chat, render_chat, chat_container, chat_list_sidebar_fn=None):
         """
         Optionally call this from runClient.py if you want to update UI state
         directly from handle_incoming_message. 
@@ -43,6 +45,8 @@ class MessageHandler:
         self._get_active_chat = get_active_chat
         self.render_chat_fn = render_chat
         self.chat_container = chat_container
+        self.chat_list_sidebar_fn = chat_list_sidebar_fn  # Store reference for sidebar refresh
+
 
     # --------------------------------------------------------------------------
     # Registration & Login
@@ -231,11 +235,7 @@ class MessageHandler:
     # --------------------------------------------------------------------------
     async def handle_incoming_message(self, data):
         """
-        The single callback from `connectionUtils.WebSocketClient`.
-        Does:
-        1) Check if challenge or direct message
-        2) DB logic
-        3) UI updates (if you have set_ui_state references)
+        Handles incoming messages, maintaining UI and database updates.
         """
         message_type = data.get("type")
         if message_type != "received":
@@ -293,12 +293,18 @@ class MessageHandler:
                             stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                             self.chat_messages[from_user].append((from_user, msg_body, stamp))
 
+                            # Auto-add new contact to sidebar if sender is not in the list
+                            if not any(chat["id"] == from_user for chat in self.chat_list):
+                                self.chat_list.append({"id": from_user, "name": from_user})
+                                if self.chat_list_sidebar_fn:
+                                    self.chat_list_sidebar_fn.refresh()  # 🔹 Refresh the chat list UI
+                                print(f"[INFO] Added {from_user} to chat list.")
+
                             # Check if the message is for the currently open chat
                             currently_active_chat = self._get_active_chat()
                             if from_user == currently_active_chat:
                                 print(f"[INFO] Updating UI for chat with {from_user}")
 
-                                # Ensure UI refresh function is being called properly
                                 if self.render_chat_fn:
                                     try:
                                         self.render_chat_fn.refresh(
@@ -311,6 +317,11 @@ class MessageHandler:
                                         print(f"[ERROR] Failed to refresh chat UI: {e}")
                             else:
                                 print(f"[INFO] Message stored but {from_user} is not active chat.")
+
+                                # 🔹 Call the UI notification function via callback
+                                if self.new_message_callback:
+                                    self.new_message_callback(from_user, msg_body)
+
                         else:
                             print("[WARNING] chat_messages is None; UI might not be initialized.")
 
@@ -330,4 +341,6 @@ class MessageHandler:
 
         except json.JSONDecodeError:
             print("[ERROR] Could not decode the message content.")
+
+
 

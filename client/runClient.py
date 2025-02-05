@@ -105,23 +105,31 @@ def load_chats_from_db():
 @ui.refreshable
 def render_chat_messages(current_user, target_chat, msg_dict):
     """
-    Rebuild the chat area for 'target_chat'.
-    Decorated with @ui.refreshable => call .refresh(...) to clear & re-run.
+    Refresh the chat area to display messages properly, inside a structured column.
     """
+    chat_messages_container.clear()  # Clear old messages before re-rendering
+    
     ui.label(f"Chat with {target_chat or ''}").classes('text-lg font-bold')
 
     if not target_chat or target_chat not in msg_dict or not msg_dict[target_chat]:
         ui.label('No messages yet.').classes('mx-auto my-4')
     else:
-        for (sender_id, text, stamp) in msg_dict[target_chat]:
-            is_sent = (sender_id == current_user)
-            ui.chat_message(
-                text=text,
-                stamp=stamp,
-                sent=is_sent
-            ).classes('text-right' if is_sent else 'text-left')
+        with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-2'):
+            for sender_id, text, stamp in msg_dict[target_chat]:
+                is_sent = sender_id == current_user  # Check if the message is sent by the user
 
-    ui.run_javascript('window.scrollTo(0, document.body.scrollHeight)')
+                # Handle multi-line messages
+                text_content = text.split("\n") if "\n" in text else text
+
+                # Create message inside column
+                ui.chat_message(
+                    text=text_content,
+                    stamp=stamp,
+                    sent=is_sent
+                ).classes('p-3 rounded-lg')
+
+    ui.run_javascript('window.scrollTo(0, document.body.scrollHeight)')  # Auto-scroll to latest message
+
 
 
 ###############################################################################
@@ -225,17 +233,30 @@ def register_page():
 @ui.page('/app')
 def chat_page():
     """
-    Main chat page: chat list, chat container, send field
+    Main chat page: toggleable chat list (sidebar), chat container, and message input.
     """
     ui.add_css('body { background-color: #121212; color: white; }')
     ui.run_javascript('document.title = "NymCHAT"')
 
     user_id = message_handler.current_user["username"] or str(uuid4())
 
-    global chat_messages_container
-    chat_messages_container = ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1')
+    global chat_messages_container  # Ensure it is globally accessible
 
+    # Function to show notifications for messages from inactive chats
+    def show_new_message_notification(sender, message):
+        """Displays a notification when a message is received from an inactive chat."""
+        ui.notify(f"New message from {sender}: {message}")
+
+    # Register the notification callback in messageHandler
+    message_handler.new_message_callback = show_new_message_notification
+
+    # Ensure chat_messages_container is initialized
+    chat_messages_container = ui.column().classes('flex-grow gap-2 overflow-auto')
+
+    # Function to Render Chat List (Sidebar)
+    @ui.refreshable
     def chat_list_sidebar():
+        """Refreshable chat list sidebar that updates when new chats are added."""
         with ui.column():
             ui.label('Chats').classes('text-xl font-bold')
             if not chat_list:
@@ -246,26 +267,35 @@ def chat_page():
                     ui.label(info["name"]).classes('font-bold text-white')
                     ui.label('Click to open chat').classes('text-gray-400 text-sm')
 
+    # Function to Open a Chat
     def open_chat(u):
-        """When a chat row is clicked in the sidebar."""
+        """When a chat row is clicked in the sidebar, set the active chat and refresh the UI."""
         set_active_chat(u["id"])
         set_active_chat_user(u["name"])
-        render_chat_messages.refresh(user_id, active_chat, messages)
+        if chat_messages_container:
+            render_chat_messages.refresh(user_id, active_chat, messages)
 
-    # Top bar
+    # Sidebar - Left Drawer (Always Visible by Default)
+    with ui.left_drawer().classes('w-64 bg-gray-900 text-white p-4') as chat_drawer:
+        chat_list_sidebar()  # Render the chat list inside the drawer
+
+    # Top Bar (Header) with Sidebar Toggle Button
     with ui.header().classes('w-full bg-gray-900 text-white p-4 items-center justify-between'):
-        ui.label('NymCHAT').classes('text-xl font-bold')
+        with ui.row().classes('items-center gap-2'):
+            ui.button('☰', on_click=lambda: chat_drawer.toggle()).props('flat color=white')  # Toggle sidebar
+            ui.label('NymCHAT').classes('text-xl font-bold')
+
         ui.button('Search', on_click=lambda: ui.navigate.to('/search')) \
             .classes('bg-blue-500 text-white p-2 rounded')
 
-    # Sidebar
-    with ui.left_drawer().classes('w-64 bg-gray-900 text-white p-4'):
-        chat_list_sidebar()
 
-    # Initial messages
-    render_chat_messages(user_id, active_chat, messages)
+    # Pass chat_list_sidebar to messageHandler
+    message_handler.set_ui_state(messages, chat_list, get_active_chat, render_chat_messages, chat_messages_container, chat_list_sidebar)
 
-    # Footer input
+    # Main Chat Display
+    render_chat_messages(user_id, active_chat, messages)  # Ensure it is called after initialization
+
+    # Footer (Message Input)
     with ui.footer().classes('w-full bg-gray-900 text-white p-4'):
         with ui.row().classes('w-full items-center'):
             text_in = ui.input(placeholder='Type a message...') \
@@ -361,5 +391,5 @@ async def startup_sequence():
 
     ui.navigate.to("/")
 
+ui.run(dark=True, host='127.0.0.1', title="NymCHAT")
 
-ui.run(dark=True)
