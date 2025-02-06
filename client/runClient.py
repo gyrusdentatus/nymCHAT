@@ -162,9 +162,9 @@ async def send_message(text_input):
 @ui.page('/')
 def main_page():
     with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
-        ui.label("Welcome to the Nym Client").classes("text-3xl font-bold mb-8")
-        ui.button("Login", on_click=lambda: ui.navigate.to("/login")).classes("mb-2")
-        ui.button("Register", on_click=lambda: ui.navigate.to("/register"))
+        ui.label("NymCHAT").classes("text-3xl font-bold mb-8")
+        ui.button("Login", color="green-6", on_click=lambda: ui.navigate.to("/login")).classes("mb-2")
+        ui.button("Register", color="green-6", on_click=lambda: ui.navigate.to("/register"))
 
 
 @ui.page('/login')
@@ -175,7 +175,8 @@ def login_page():
 
         if usernames:
             user_select = ui.select(usernames, label="Select a User").props("outlined").classes("mb-2")
-            spin = ui.spinner(size='lg').props('hidden').classes("mt-4 justify-center")
+            with ui.row().classes('justify-center w-full'):
+                spin = ui.spinner(size='lg').props('hidden').classes("mt-4")
 
             async def do_login():
                 if not user_select.value:
@@ -194,11 +195,11 @@ def login_page():
                 spin.props('hidden')
                 ui.navigate.to("/app")
 
-            ui.button("Login", on_click=do_login).classes("mt-4")
+            ui.button("Login", color="green-6", on_click=do_login).classes("mt-4")
         else:
             ui.label("No users found. Please register first.")
 
-        ui.button("Back", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
 
 @ui.page('/register')
 def register_page():
@@ -207,8 +208,9 @@ def register_page():
         user_in = ui.input(label="Username").props("outlined").classes("mb-2")
         # Removed first and last name fields
 
-        spin = ui.spinner(size='lg').props('hidden').classes("mt-4")
-
+        with ui.row().classes('justify-center w-full'):
+            spin = ui.spinner(size='lg').props('hidden').classes("mt-4")
+            
         async def do_register():
             username = user_in.value.strip()
             if not username:
@@ -224,8 +226,8 @@ def register_page():
             ui.notify("Registration completed! Please login.")
             ui.navigate.to("/login")
 
-        ui.button("Register", on_click=do_register).classes("mt-4")
-        ui.button("Back", on_click=lambda: ui.navigate.to("/"))
+        ui.button("Register", color="green-6", on_click=do_register).classes("mt-4")
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"))
 
 
 @ui.page('/app')
@@ -233,9 +235,6 @@ def chat_page():
     """
     Main chat page: toggleable chat list (sidebar), chat container, and message input.
     """
-    ui.add_css('body { background-color: #121212; color: white; }')
-    ui.run_javascript('document.title = "NymCHAT"')
-
     user_id = message_handler.current_user["username"] or str(uuid4())
 
     global chat_messages_container  # Ensure it is globally accessible
@@ -270,20 +269,21 @@ def chat_page():
         """When a chat row is clicked in the sidebar, set the active chat and refresh the UI."""
         set_active_chat(u["id"])
         set_active_chat_user(u["name"])
+        chat_drawer.toggle()
         if chat_messages_container:
             render_chat_messages.refresh(user_id, active_chat, messages)
 
     # Sidebar - Left Drawer (Always Visible by Default)
-    with ui.left_drawer().classes('w-64 bg-gray-900 text-white p-4') as chat_drawer:
+    with ui.left_drawer().classes('w-64 bg-zinc-700 text-white p-4') as chat_drawer:
         chat_list_sidebar()  # Render the chat list inside the drawer
 
     # Top Bar (Header) with Sidebar Toggle Button
-    with ui.header().classes('w-full bg-gray-900 text-white p-4 items-center justify-between'):
+    with ui.header().classes('w-full bg-zinc-800 text-white p-4 items-center justify-between'):
         with ui.row().classes('items-center gap-2'):
-            ui.button('☰', on_click=lambda: chat_drawer.toggle()).props('flat color=white')  # Toggle sidebar
+            ui.button('☰', color="green-6", on_click=lambda: chat_drawer.toggle()).props('flat color=white')  # Toggle sidebar
             ui.label('NymCHAT').classes('text-xl font-bold')
 
-        ui.button('Search', on_click=lambda: ui.navigate.to('/search')) \
+        ui.button('Search', color="green-6", on_click=lambda: ui.navigate.to('/search')) \
             .classes('bg-blue-500 text-white p-2 rounded')
 
 
@@ -294,29 +294,27 @@ def chat_page():
     render_chat_messages(user_id, active_chat, messages)  # Ensure it is called after initialization
 
     # Footer (Message Input)
-    with ui.footer().classes('w-full bg-gray-900 text-white p-4'):
+    with ui.footer().classes('w-full bg-zinc-800 text-white p-4'):
         with ui.row().classes('w-full items-center'):
             text_in = ui.input(placeholder='Type a message...') \
                 .props('rounded outlined input-class=mx-3') \
-                .classes('flex-grow bg-gray-700 text-white p-2 rounded-lg') \
+                .classes('flex-grow bg-zinc-700 text-white p-2 rounded-lg') \
                 .on('keydown.enter', lambda: asyncio.create_task(send_message(text_in)))
 
-            ui.button('Send', on_click=lambda: asyncio.create_task(send_message(text_in))) \
-                .classes('bg-blue-500 text-white p-2 rounded')
+            ui.button('Send', color="green-6", on_click=lambda: asyncio.create_task(send_message(text_in))) \
+                .classes('text-white p-2 rounded')
 
 
 @ui.page('/search')
 def search_page():
     """User Search Page for queries."""
-    ui.add_css('body { background-color: #121212; color: white; }')
-
-    ui.header().classes('w-full bg-gray-900 text-white p-4 items-center justify-between')
-    ui.button('← Back to Chat', on_click=lambda: ui.navigate.to('/app')).classes('bg-gray-700 text-white p-2 rounded')
+    with ui.header().classes('w-full bg-zinc-950 text-white p-4 justify-between'):
+        ui.button('← Back to Chat', color="green-6", on_click=lambda: ui.navigate.to('/app')).classes('text-white p-2 rounded')
     
     with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 w-full items-start p-4'):
-        with ui.row().classes('gap-2 bg-gray-800 p-4 rounded-lg shadow-lg w-full items-center justify-center'):
-            search_in = ui.input(placeholder='Enter username...').props('rounded outlined input-class=mx-3').classes('bg-gray-700 text-white p-2 rounded-lg w-full')
-            ui.button('Search', on_click=lambda: asyncio.create_task(do_search())).classes('bg-blue-500 text-white p-2 rounded')
+        with ui.row().classes('gap-2 bg-zinc-800 p-4 rounded-lg shadow-lg w-full items-center justify-center'):
+            search_in = ui.input(placeholder='Enter username...').props('rounded outlined input-style="border-color: red !important;" input-class="focus:border-green-500"').classes('p-2 rounded-lg w-full')
+            ui.button('Search', color="green-6", on_click=lambda: asyncio.create_task(do_search())).classes('text-white p-2 rounded')
 
         global profile_container
         profile_container = ui.column().classes('mt-4')
@@ -343,7 +341,7 @@ def search_page():
                     ui.notify(result)
                 elif isinstance(result, dict):
                     user_data = result
-                    with ui.card().classes('p-4 bg-gray-800 text-white rounded-lg shadow-lg w-80'):
+                    with ui.card().classes('p-4 bg-zinc-700 text-white rounded-lg shadow-lg w-80'):
                         ui.label(f"Username: {user_data.get('username') or 'N/A'}").classes('text-xl font-bold')
                         partial_key = (user_data.get('publicKey') or '')[:50]
                         ui.label(f"Public Key (partial): {partial_key}...")
@@ -354,7 +352,7 @@ def search_page():
                                 chat_list.append(new_chat)
                             ui.navigate.to('/app')
 
-                        ui.button('Start Chat', on_click=start_chat).classes('bg-green-500 text-white p-2 mt-2 rounded')
+                        ui.button('Start Chat', color='green-6', on_click=start_chat).classes('text-white p-2 mt-2 rounded')
                 else:
                     ui.notify("Unexpected response format from server.")
 
@@ -390,3 +388,5 @@ async def startup_sequence():
     ui.navigate.to("/")
 
 ui.run(dark=True, host='127.0.0.1', title="NymCHAT")
+
+
