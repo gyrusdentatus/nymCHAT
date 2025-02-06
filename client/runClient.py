@@ -205,21 +205,19 @@ def register_page():
     with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
         ui.label("Register a New User").classes("text-2xl font-bold mb-4")
         user_in = ui.input(label="Username").props("outlined").classes("mb-2")
-        first_in = ui.input(label="First Name (optional)").props("outlined").classes("mb-2")
-        last_in = ui.input(label="Last Name (optional)").props("outlined").classes("mb-2")
+        # Removed first and last name fields
 
         spin = ui.spinner(size='lg').props('hidden').classes("mt-4")
 
         async def do_register():
             username = user_in.value.strip()
-            first_n = first_in.value
-            last_n = last_in.value
             if not username:
                 ui.notify("Username is required!")
                 return
 
             spin.props(remove='hidden')
-            await message_handler.register_user(username, first_n, last_n)
+            # Call register_user with only the username
+            await message_handler.register_user(username)
             await message_handler.registration_complete.wait()
 
             spin.props('hidden')
@@ -392,4 +390,3 @@ async def startup_sequence():
     ui.navigate.to("/")
 
 ui.run(dark=True, host='127.0.0.1', title="NymCHAT")
-

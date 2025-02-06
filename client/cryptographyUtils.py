@@ -1,6 +1,8 @@
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature, decode_dss_signature
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import os
 
 class CryptoUtils:
@@ -123,3 +125,55 @@ class CryptoUtils:
             ec.ECDSA(hashes.SHA256())
         )
         return signature.hex()
+
+    # -----------------------------
+    # New methods for encryption
+    # -----------------------------
+    def encrypt_message(self, plaintext, sender_private_key, recipient_public_key):
+        """
+        Encrypt the plaintext message using ECDH key exchange to derive a shared secret and AES-GCM.
+        :param plaintext: The plain text message to encrypt.
+        :param sender_private_key: The sender's private key object.
+        :param recipient_public_key: The recipient's public key object.
+        :return: A dict containing the IV, ciphertext, and tag (all hex-encoded).
+        """
+        # Derive the shared key using ECDH
+        shared_key = sender_private_key.exchange(ec.ECDH(), recipient_public_key)
+        derived_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b'handshake data'
+        ).derive(shared_key)
+        # Generate a random IV
+        iv = os.urandom(12)
+        # Encrypt using AES-GCM
+        encryptor = Cipher(algorithms.AES(derived_key), modes.GCM(iv)).encryptor()
+        ciphertext = encryptor.update(plaintext.encode()) + encryptor.finalize()
+        return {
+            "iv": iv.hex(),
+            "ciphertext": ciphertext.hex(),
+            "tag": encryptor.tag.hex()
+        }
+
+    def decrypt_message(self, enc_dict, recipient_private_key, sender_public_key):
+        """
+        Decrypt an encrypted message using ECDH key exchange and AES-GCM.
+        :param enc_dict: A dict containing 'iv', 'ciphertext', and 'tag' (all hex-encoded).
+        :param recipient_private_key: The recipient's private key object.
+        :param sender_public_key: The sender's public key object.
+        :return: The decrypted plain text message.
+        """
+        shared_key = recipient_private_key.exchange(ec.ECDH(), sender_public_key)
+        derived_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b'handshake data'
+        ).derive(shared_key)
+        iv = bytes.fromhex(enc_dict["iv"])
+        ciphertext = bytes.fromhex(enc_dict["ciphertext"])
+        tag = bytes.fromhex(enc_dict["tag"])
+        decryptor = Cipher(algorithms.AES(derived_key), modes.GCM(iv, tag)).decryptor()
+        plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+        return plaintext.decode()
