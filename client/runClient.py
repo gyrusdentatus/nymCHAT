@@ -14,7 +14,7 @@ from messageHandler import MessageHandler
 ###############################################################################
 # GLOBAL / IN-MEMORY STATE
 ###############################################################################
-DB_DIR = "./storage"
+DB_DIR = os.path.join(os.getcwd(), "storage")
 usernames = []
 
 chat_list = []        # [{"id": <username>, "name": <username>}]
