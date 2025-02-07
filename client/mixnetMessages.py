@@ -1,7 +1,7 @@
 import json
 
 # Global variable for the server address
-SERVER_ADDRESS = "HGArbcxFvcVtkzNXnpVVcYxuKHCUw6XXgnguwgtr8E48.6NbUjrYGFiXKSfetoa7cGRDTCPanMc2qAQx2i7Z2weah@3KPGnXGtrdYbUVesdoeAqSVpRE6GNL3Vz6dJEyTMMyn7"
+SERVER_ADDRESS = "42J435E6xrWqSHVtFuHxFwgKEX2LisMpomNMsh89AKA5.Fr9Rm3sKS72UondR9AqYVkDArbxsve9fmdWWMWEQ6tQK@3EPuxwGn2WP2HdxybzoDa5QsohYSP76aQQRUJuPMvk23"
 
 class MixnetMessage:
 

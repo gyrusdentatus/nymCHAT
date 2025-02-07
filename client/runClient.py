@@ -161,55 +161,72 @@ async def send_message(text_input):
 ###############################################################################
 @ui.page('/')
 def main_page():
-    with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
-        ui.label("NymCHAT").classes("text-3xl font-bold mb-8")
+    with ui.column().classes('max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+        ui.label("NymCHAT").classes("text-3xl text-center font-bold mb-8")
         ui.button("Login", color="green-6", on_click=lambda: ui.navigate.to("/login")).classes("mb-2")
         ui.button("Register", color="green-6", on_click=lambda: ui.navigate.to("/register"))
 
 
 @ui.page('/login')
 def login_page():
-    with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
-        ui.label("Login").classes("text-2xl font-bold mb-4")
-        scan_for_users()
+    with ui.column().classes('max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+        ui.label("Login").classes("text-2xl text-center font-bold mb-4")
+        
+        scan_for_users()  # Assuming this function loads the usernames list
 
+        # If there are usernames, display the user selection dropdown
         if usernames:
+            # Create the select dropdown for username selection
             user_select = ui.select(usernames, label="Select a User").props("outlined").classes("mb-2")
+            
+            # Spinner that will show during login process
             with ui.row().classes('justify-center w-full'):
-                spin = ui.spinner(size='lg').props('hidden').classes("mt-4")
+                spin = ui.spinner(size='lg').props('hidden').classes("mb-4")
 
+            # Define the login function before using it in the button
             async def do_login():
                 if not user_select.value:
                     ui.notify("Please select a user.")
                     return
-                spin.props(remove='hidden')
+                spin.props(remove='hidden')  # Show the spinner
 
+                # Start the login process
                 await message_handler.login_user(user_select.value)
-                await message_handler.login_complete.wait()
+                await message_handler.login_complete.wait()  # Wait until login is complete
 
+                # After login, set up UI state and load chat data
                 message_handler.set_ui_state(messages, chat_list, get_active_chat, render_chat_messages, chat_messages_container)
+                load_chats_from_db()  # Assuming this loads the user's chat data from the database
 
-                # Once login is finished, load chat data
-                load_chats_from_db()
+                spin.props('hidden')  # Hide the spinner once login is done
 
-                spin.props('hidden')
-                ui.navigate.to("/app")
+                # Check the login status and notify the user accordingly
+                if message_handler.login_successful:
+                    ui.notify("Login successful! Welcome.")
+                    ui.navigate.to("/app")  # Navigate to the app page after login
+                else:
+                    ui.notify("Login Failed: Did you delete your key file?")
 
-            ui.button("Login", color="green-6", on_click=do_login).classes("mt-4")
+            # Login button, with do_login as the on_click handler
+            ui.button("Login", color="green-6", on_click=do_login).classes("mb-2")
+
         else:
+            # If no usernames are found, show a message to register first
             ui.label("No users found. Please register first.")
+            ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/")).classes("mb-2")
 
-        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
+        # Back button to navigate to the previous page
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/")).classes("mb-2")
+
 
 @ui.page('/register')
 def register_page():
-    with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
-        ui.label("Register a New User").classes("text-2xl font-bold mb-4")
+    with ui.column().classes('max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+        ui.label("Register a New User").classes("text-2xl text-center font-bold mb-4")
         user_in = ui.input(label="Username").props("outlined").classes("mb-2")
-        # Removed first and last name fields
-
+        
         with ui.row().classes('justify-center w-full'):
-            spin = ui.spinner(size='lg').props('hidden').classes("mt-4")
+            spin = ui.spinner(size='lg').props('hidden').classes("mb-4")
             
         async def do_register():
             username = user_in.value.strip()
@@ -217,17 +234,26 @@ def register_page():
                 ui.notify("Username is required!")
                 return
 
+            # Show the spinner while registering
             spin.props(remove='hidden')
-            # Call register_user with only the username
+
+            # Call the backend to register the user
             await message_handler.register_user(username)
-            await message_handler.registration_complete.wait()
+            await message_handler.registration_complete.wait()  # Wait for registration to complete
 
+            # Hide the spinner after registration completes
             spin.props('hidden')
-            ui.notify("Registration completed! Please login.")
-            ui.navigate.to("/login")
 
-        ui.button("Register", color="green-6", on_click=do_register).classes("mt-4")
-        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"))
+            # Check the registration status and notify the user
+            if message_handler.registration_successful:
+                ui.notify("Registration completed! Please login.")
+                ui.navigate.to("/login")
+            else:
+                ui.notify("Registration failed: Username is already in use.")
+                user_in.value = ""  # Clear the input box if registration fails
+
+        ui.button("Register", color="green-6", on_click=do_register).classes("mb-2")
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/")).classes("mb-2")
 
 
 @ui.page('/app')
@@ -388,5 +414,3 @@ async def startup_sequence():
     ui.navigate.to("/")
 
 ui.run(dark=True, host='127.0.0.1', title="NymCHAT")
-
-

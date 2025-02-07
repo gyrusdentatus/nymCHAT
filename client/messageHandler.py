@@ -1,7 +1,6 @@
-# messageHandler.py
-
 import json
 import asyncio
+from nicegui import ui
 from datetime import datetime
 from cryptography.hazmat.primitives import serialization
 from mixnetMessages import MixnetMessage
@@ -20,6 +19,10 @@ class MessageHandler:
         # Wait-for-completion events
         self.registration_complete = asyncio.Event()
         self.login_complete = asyncio.Event()
+        
+        # Registration / login status (success or failure)
+        self.registration_successful = None
+        self.login_successful = None
 
         # Query flow
         self.query_result_event = asyncio.Event()
@@ -33,6 +36,8 @@ class MessageHandler:
         self.chat_list_sidebar_fn = None  # For refreshing the chat list sidebar
         self.chat_container = None
         self.new_message_callback = None  # To notify UI of new messages
+
+
 
     def set_ui_state(self, messages, chat_list, get_active_chat, render_chat, chat_container, chat_list_sidebar_fn=None):
         """
@@ -50,6 +55,7 @@ class MessageHandler:
     # --------------------------------------------------------------------------
     # Registration & Login
     # --------------------------------------------------------------------------
+
     async def register_user(self, username, first_name="", last_name=""):
         try:
             self.current_user["username"] = username
@@ -129,6 +135,9 @@ class MessageHandler:
             print(f"[ERROR] Signing login nonce: {e}")
 
     async def handle_registration_response(self, content):
+        """
+        Handles the response after the registration challenge has been completed.
+        """
         if content == "success":
             print("[INFO] Registration successful!")
             username = self.current_user["username"]
@@ -140,6 +149,8 @@ class MessageHandler:
                 print("[INFO] Keys saved.")
             except Exception as e:
                 print(f"[ERROR] Saving keys: {e}")
+                self.registration_successful = False
+                self.registration_complete.set()  # Ensure the event is set
                 return
 
             try:
@@ -147,13 +158,23 @@ class MessageHandler:
                 print("[INFO] DB initialized for user:", username)
             except Exception as e:
                 print(f"[ERROR] DB init: {e}")
+                self.registration_successful = False
+                self.registration_complete.set()  # Ensure the event is set
                 return
 
-            self.registration_complete.set()
+            self.registration_successful = True  # Registration is successful
+            self.registration_complete.set()  # Signal that registration is complete
+
         else:
+            # Handle registration failure (e.g., username already in use)
             print(f"[ERROR] Registration failed: {content}")
+            self.registration_successful = False
+            self.registration_complete.set()  # Ensure the event is set
 
     async def handle_login_response(self, content):
+        """
+        Handles the response after the login challenge has been completed.
+        """
         if content == "success":
             print("[INFO] Login successful!")
             username = self.current_user["username"]
@@ -163,14 +184,22 @@ class MessageHandler:
                 self.db_manager.create_user_tables(username)
             except Exception as e:
                 print(f"[ERROR] DB init: {e}")
+                self.login_successful = False
+                self.login_complete.set()  # Ensure the event is set
+                return
 
-            self.login_complete.set()
+            self.login_successful = True  # Login is successful
+            self.login_complete.set()  # Signal that login is complete
+
         else:
             print(f"[ERROR] Login failed: {content}")
+            self.login_successful = False
+            self.login_complete.set()  # Signal that login is complete even if it failed
 
     # --------------------------------------------------------------------------
     # Sending Direct Messages (All messages encrypted)
     # --------------------------------------------------------------------------
+
     async def send_direct_message(self, recipient_username, message_content):
         if not recipient_username or not message_content.strip():
             return
@@ -235,6 +264,7 @@ class MessageHandler:
     # --------------------------------------------------------------------------
     # Query
     # --------------------------------------------------------------------------
+
     async def query_user(self, target_username):
         try:
             self.query_result_event.clear()
@@ -264,6 +294,7 @@ class MessageHandler:
     # --------------------------------------------------------------------------
     # Handling Incoming Messages (SINGLE CALLBACK)
     # --------------------------------------------------------------------------
+
     async def handle_incoming_message(self, data):
         """
         Handles incoming messages, updating the UI and local database.
