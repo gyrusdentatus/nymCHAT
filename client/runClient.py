@@ -161,15 +161,15 @@ async def send_message(text_input):
 ###############################################################################
 @ui.page('/')
 def main_page():
-    with ui.column().classes('max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+    with ui.column().classes('max-w-2xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
         ui.label("NymCHAT").classes("text-3xl text-center font-bold mb-8")
-        ui.button("Login", color="green-6", on_click=lambda: ui.navigate.to("/login")).classes("mb-2")
-        ui.button("Register", color="green-6", on_click=lambda: ui.navigate.to("/register"))
+        ui.button("Login", color="green-6", on_click=lambda: ui.navigate.to("/login"), icon="login").classes("mb-2")
+        ui.button("Register", color="green-6", on_click=lambda: ui.navigate.to("/register"), icon="how_to_reg")
 
 
 @ui.page('/login')
 def login_page():
-    with ui.column().classes('max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+    with ui.column().classes('max-w-4xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
         ui.label("Login").classes("text-2xl text-center font-bold mb-4")
         
         scan_for_users()  # Assuming this function loads the usernames list
@@ -208,20 +208,20 @@ def login_page():
                     ui.notify("Login Failed: Did you delete your key file?")
 
             # Login button, with do_login as the on_click handler
-            ui.button("Login", color="green-6", on_click=do_login).classes("mb-2")
+            ui.button("Login", color="green-6", on_click=do_login, icon="login").classes("mb-2")
 
         else:
             # If no usernames are found, show a message to register first
             ui.label("No users found. Please register first.")
-            ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/")).classes("mb-2")
+            ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"), icon="arrow_back_ios_new").classes("mb-2")
 
         # Back button to navigate to the previous page
-        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/")).classes("mb-2")
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"), icon="arrow_back_ios_new").classes("mb-2")
 
 
 @ui.page('/register')
 def register_page():
-    with ui.column().classes('max-w-6xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+    with ui.column().classes('max-w-4xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
         ui.label("Register a New User").classes("text-2xl text-center font-bold mb-4")
         user_in = ui.input(label="Username").props("outlined").classes("mb-2")
         
@@ -252,8 +252,8 @@ def register_page():
                 ui.notify("Registration failed: Username is already in use.")
                 user_in.value = ""  # Clear the input box if registration fails
 
-        ui.button("Register", color="green-6", on_click=do_register).classes("mb-2")
-        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/")).classes("mb-2")
+        ui.button("Register", color="green-6", on_click=do_register, icon="how_to_reg").classes("mb-2")
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"), icon="arrow_back_ios_new").classes("mb-2")
 
 
 @ui.page('/app')
@@ -305,13 +305,25 @@ def chat_page():
 
     # Top Bar (Header) with Sidebar Toggle Button
     with ui.header().classes('w-full bg-zinc-800 text-white p-4 items-center justify-between'):
+        # Left section: Sidebar Toggle and App Name
         with ui.row().classes('items-center gap-2'):
-            ui.button('☰', color="green-6", on_click=lambda: chat_drawer.toggle()).props('flat color=white')  # Toggle sidebar
+            ui.button(icon='menu', color="", on_click=lambda: chat_drawer.toggle())  # Sidebar toggle
             ui.label('NymCHAT').classes('text-xl font-bold')
 
-        ui.button('Search', color="green-6", on_click=lambda: ui.navigate.to('/search')) \
-            .classes('bg-blue-500 text-white p-2 rounded')
+        # Center section: Search Button
+        ui.button('Search', color="green-6", on_click=lambda: ui.navigate.to('/search'), icon="search") \
+            .classes('bg-blue-500 text-white p-2 rounded') \
+            .style('margin-left: auto; margin-right: auto;')  # Center the search button
 
+        # Expandable Floating Action Button (FAB) in the header (top-right)
+        with ui.element('q-fab').props('square icon=settings color=green-6 direction=left'):
+            # Actions inside the FAB (they will expand to the left)
+            ui.element('q-fab-action').props('icon=logout color=green-6 label=LOGOUT') \
+                .on('click', lambda: ui.navigate.to('/'))  # Log out action
+            
+            # Shut down action calls the app.shutdown
+            ui.element('q-fab-action').props('icon=power_settings_new color=green-6 label=SHUTDOWN') \
+                .on('click', lambda: (app.shutdown(), ui.notify("Shutting down the app...")))  # Shut down and notify
 
     # Pass chat_list_sidebar to messageHandler
     message_handler.set_ui_state(messages, chat_list, get_active_chat, render_chat_messages, chat_messages_container, chat_list_sidebar)
@@ -327,7 +339,7 @@ def chat_page():
                 .classes('flex-grow bg-zinc-700 text-white p-2 rounded-lg') \
                 .on('keydown.enter', lambda: asyncio.create_task(send_message(text_in)))
 
-            ui.button('Send', color="green-6", on_click=lambda: asyncio.create_task(send_message(text_in))) \
+            ui.button('Send', color="green-6", icon="send", on_click=lambda: asyncio.create_task(send_message(text_in))) \
                 .classes('text-white p-2 rounded')
 
 
@@ -335,12 +347,15 @@ def chat_page():
 def search_page():
     """User Search Page for queries."""
     with ui.header().classes('w-full bg-zinc-950 text-white p-4 justify-between'):
-        ui.button('← Back to Chat', color="green-6", on_click=lambda: ui.navigate.to('/app')).classes('text-white p-2 rounded')
+        ui.button('Back', color="green-6", icon="arrow_back_ios_new", on_click=lambda: ui.navigate.to('/app')).classes('text-white p-2 rounded')
     
     with ui.column().classes('w-full max-w-6xl mx-auto items-stretch flex-grow gap-1 w-full items-start p-4'):
         with ui.row().classes('gap-2 bg-zinc-800 p-4 rounded-lg shadow-lg w-full items-center justify-center'):
-            search_in = ui.input(placeholder='Enter username...').props('rounded outlined input-style="border-color: red !important;" input-class="focus:border-green-500"').classes('p-2 rounded-lg w-full')
-            ui.button('Search', color="green-6", on_click=lambda: asyncio.create_task(do_search())).classes('text-white p-2 rounded')
+            search_in = ui.input(placeholder='Enter a username: *CASE SENSITIVE*') \
+                .props('rounded outlined input-class=mx-3') \
+                .classes('flex-grow bg-zinc-700 text-white p-2 rounded-lg') \
+                .on('keydown.enter', lambda: asyncio.create_task(do_search()))
+            ui.button('Search', color="green-6", icon="search", on_click=lambda: asyncio.create_task(do_search())).classes('text-white p-2 rounded')
 
         global profile_container
         profile_container = ui.column().classes('mt-4')
@@ -378,7 +393,7 @@ def search_page():
                                 chat_list.append(new_chat)
                             ui.navigate.to('/app')
 
-                        ui.button('Start Chat', color='green-6', on_click=start_chat).classes('text-white p-2 mt-2 rounded')
+                        ui.button('Start Chat', color='green-6', icon="chat", on_click=start_chat).classes('text-white p-2 mt-2 rounded')
                 else:
                     ui.notify("Unexpected response format from server.")
 
