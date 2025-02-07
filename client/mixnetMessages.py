@@ -1,7 +1,25 @@
 import json
+import os
+
+# Read the server address from the config file
+def read_server_address():
+    try:
+        # Direct path to storage/config.txt
+        config_path = os.path.join('storage', 'config.txt')
+        
+        with open(config_path, 'r') as file:
+            line = file.readline().strip()
+            if line.startswith("SERVER_ADDRESS="):
+                return line.split('=')[1].strip()
+            else:
+                raise ValueError("SERVER_ADDRESS not found in config file")
+    except FileNotFoundError:
+        raise FileNotFoundError("Config file not found.")
+    except Exception as e:
+        raise e
 
 # Global variable for the server address
-SERVER_ADDRESS = "42J435E6xrWqSHVtFuHxFwgKEX2LisMpomNMsh89AKA5.Fr9Rm3sKS72UondR9AqYVkDArbxsve9fmdWWMWEQ6tQK@3EPuxwGn2WP2HdxybzoDa5QsohYSP76aQQRUJuPMvk23"
+SERVER_ADDRESS = read_server_address()
 
 class MixnetMessage:
 
