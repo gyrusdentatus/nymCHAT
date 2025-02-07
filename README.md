@@ -11,7 +11,7 @@ NymCHAT is a messaging client that routes all traffic through the Nym Mixnet. It
 
 ---
 ## Prerequisites
-
+- **Linux-based OS**
 - **nym-client**: Download from [Nym Client Release Page](https://github.com/nymtech/nym/releases/tag/nym-binaries-v2025.2-hu)
 ---
 ## Setting up the nym-client
