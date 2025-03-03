@@ -1,5 +1,5 @@
 # runClient.py
-
+import threading
 import os
 import asyncio
 from nicegui import ui, app
@@ -44,7 +44,7 @@ connection_client = MixnetConnectionClient()
 message_handler = MessageHandler(crypto_utils, connection_client)
 
 ###############################################################################
-# UTILITY: SCAN FOR USERS, LOAD CHATS FROM DB
+# UTILITY: SCAN FOR USERS, LOAD CHATS FROM DB, CONNECT TO MIXNET
 ###############################################################################
 def scan_for_users():
     global usernames
@@ -94,6 +94,23 @@ def load_chats_from_db():
         messages[contact_username] = msg_list
 
     print("[INFO] Chat list and messages loaded from DB.")
+
+async def connect_mixnet():
+    print("[INFO] Initializing Mixnet client...")
+    await connection_client.init()
+    print("[INFO] Mixnet client initialized.")
+    nym_address = await connection_client.get_nym_address()
+    print(f"[INFO] My Nym Address: {nym_address}")
+    main_loop = asyncio.get_running_loop()
+    def message_callback(msg):
+        print(f"[DEBUG] Received raw message from server: {msg}")
+        asyncio.run_coroutine_threadsafe(message_handler.handle_incoming_message(msg), main_loop)
+    await connection_client.set_message_callback(message_callback)
+    print("[INFO] Message callback set.")
+    asyncio.create_task(connection_client.receive_messages())
+    print("[INFO] Started message receiving loop.")
+    ui.navigate.to("/welcome")  # Redirect to the welcome page after connection
+
 
 ###############################################################################
 # REFRESHABLE UI FOR CHAT
@@ -153,15 +170,30 @@ async def send_message(text_input):
 # PAGE DEFINITIONS
 ###############################################################################
 @ui.page('/')
-def main_page():
+def connect_page():
+    with ui.column().classes('max-w-4xl mx-auto items-center flex flex-col justify-center h-screen'):
+        ui.label("NymCHAT").classes("text-3xl font-bold mb-8")
+        with ui.row().classes('justify-center w-full'):
+            spin = ui.spinner(size='lg').props('hidden').classes("mb-4")
+        
+        async def do_connect():
+            spin.props(remove='hidden')  # Show the spinner
+            await connect_mixnet()        # Your async connection function
+            spin.props('hidden')          # Hide the spinner after connecting
+            ui.navigate.to("/welcome")    # Navigate within the UI slot
+        
+        ui.button("Connect to Mixnet", color="green-6", on_click=do_connect, icon="wifi")
+
+@ui.page('/welcome')
+def welcome_page():
     with ui.column().classes('max-w-2xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
-        ui.label("NymCHAT").classes("text-3xl text-center font-bold mb-8")
+        ui.label("Welcome to NymCHAT").classes("text-3xl text-center font-bold mb-8")
         ui.button("Login", color="green-6", on_click=lambda: ui.navigate.to("/login"), icon="login").classes("mb-2")
         ui.button("Register", color="green-6", on_click=lambda: ui.navigate.to("/register"), icon="how_to_reg").classes("mb-2")
 
 @ui.page('/login')
 def login_page():
-    with ui.column().classes('max-w-4xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+    with ui.column().classes('max-w-2xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
         ui.label("Login").classes("text-2xl text-center font-bold mb-4")
         
         scan_for_users()  # Loads the list of usernames
@@ -197,13 +229,12 @@ def login_page():
             ui.button("Login", color="green-6", on_click=do_login, icon="login").classes("mb-2")
         else:
             ui.label("No users found. Please register first.")
-            ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"), icon="arrow_back_ios_new").classes("mb-2")
 
-        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"), icon="arrow_back_ios_new").classes("mb-2")
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/welcome"), icon="arrow_back_ios_new").classes("mb-2")
 
 @ui.page('/register')
 def register_page():
-    with ui.column().classes('max-w-4xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+    with ui.column().classes('max-w-2xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
         ui.label("Register a New User").classes("text-2xl text-center font-bold mb-4")
         user_in = ui.input(label="Username").props("outlined").classes("mb-2")
         
@@ -229,7 +260,7 @@ def register_page():
                 user_in.value = ""
 
         ui.button("Register", color="green-6", on_click=do_register, icon="how_to_reg").classes("mb-2")
-        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"), icon="arrow_back_ios_new").classes("mb-2")
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/welcome"), icon="arrow_back_ios_new").classes("mb-2")
 
 @ui.page('/app')
 def chat_page():
@@ -346,30 +377,6 @@ def search_page():
 ###############################################################################
 @app.on_startup
 async def startup_sequence():
-    print("[INFO] Initializing Mixnet client...")
-
-    # Initialize new client
-    await connection_client.init()
-    print("[INFO] Mixnet client initialized.")
-
-    # Get self Nym address
-    nym_address = await connection_client.get_nym_address()
-    print(f"[INFO] My Nym Address: {nym_address}")
-
-    main_loop = asyncio.get_running_loop()
-
-    # Set message callback
-    def message_callback(msg):
-        print(f"[DEBUG] Received raw message from server: {msg}")
-        asyncio.run_coroutine_threadsafe(message_handler.handle_incoming_message(msg), main_loop)  # ✅ Properly scheduled
-        
-    await connection_client.set_message_callback(message_callback)
-    print("[INFO] Message callback set.")
-
-    # Start the listener for incoming messages
-    asyncio.create_task(connection_client.receive_messages())
-    print("[INFO] Started message receiving loop.")
-
     # UI Setup
     message_handler.set_ui_state(
         messages,               # in-memory messages dict
@@ -379,6 +386,18 @@ async def startup_sequence():
         chat_messages_container # container (if needed)
     )
 
+def shutdown_client():
+    # Create a new event loop in this thread and run the shutdown coroutine
+    asyncio.run(connection_client.shutdown())
 
+@app.on_shutdown
+def on_shutdown():
+    if connection_client.client is not None:
+        print("[INFO] Shutting down Mixnet client...")
+        t = threading.Thread(target=shutdown_client)
+        t.start()
+        t.join()  # Wait for the shutdown to complete
+        print("[INFO] Mixnet client shutdown complete.")
+        
 ui.run(dark=True, host='127.0.0.1', title="NymCHAT")
 
