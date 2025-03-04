@@ -13,3 +13,5 @@ nym-sdk = { git = "https://github.com/nymtech/nym", branch = "master" }
 
 [lib]
 crate-type = ["cdylib"]
+
+
