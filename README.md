@@ -1,69 +1,69 @@
 # NymCHAT
 
-NymCHAT is a messaging client that routes all traffic through the Nym Mixnet. It sends messages to the NymServer, which acts as a remailer / directory and is designed to only store a username, public key, and SURB. A **SURB** (Short Unlinkable Reply Block) is a cryptographic token that allows the server to send a reply to a client without revealing or linking the client's identity. 
+NymCHAT is a messaging client that routes all traffic through the Nym Mixnet for privacy. 
 
 ---
 ## Features
 
 - **Network-Level Privacy**: By routing all messages through the mixnet, network traffic metadata is obfuscated using layered encryption, independent message routing, and cover traffic, making it resistant to global adversaries and advanced traffic analysis techniques​​.
-- **User Registration**: No Information Required. 
-- **End-to-End Encryption**: All messages are encrypted using AES-GCM, with secure key exchange via ECDH, ensuring privacy and integrity of communication between users.
+- **User Registration**: No Personal Information Required. 
+- **End-to-End Encryption**: All messages are encrypted / decrypted locally using AES-GCM, with secure key exchange via ECDH, ensuring privacy and integrity of communication between users.
 
 ---
 ## Prerequisites
-- **Linux-based OS**
-- **nym-client**: Download from [Nym Client Release Page](https://github.com/nymtech/nym/releases/tag/nym-binaries-v2025.2-hu)
+- Python 3.11+
+- Rust
 ---
-## Setting up the nym-client
+## Set Up
+In order to communicate with the mixnet, we use the Nym Rust SDK with pyo3 bindings If you are on linux, you can install the pre-existing .whl, or build yourself. 
 
-1. **Download and make executable:**
-- Once you've downloaded the `nym-client` file, navigate (`cd`) to its location in the terminal.
-- Make it executable by running: `sudo chmod +x nym-client`
-
-2. **Initialize the client**:
-- Initialize the client with a unique ID by running:  `./nym-client init --id name` 
-- Replace `name` with any identifier you'd like to use for your client.
-
-3. **Run the client**:
-- Start the client by running: `./nym-client run --id name`
-- Replace `name` with the identifier you used during initialization.
-
-> Once you see the message `> Client startup finished!`, you’ll know the Nym client is ready. Keep this terminal running, and open a new terminal for the next steps.
-
----
-## Running the App
-
-1. **Set up your Python environment**:
-- Clone this repository and navigate to the directory:
+1.  Clone this repository and navigate to the directory:
 ```
 git clone https://github.com/code-zm/nymCHAT.git
 cd nymChat
 ```
 
-2. **Create Virutal Environment**
-- Run these commands to create and activate a virtual environment:
+2. Create & activate python virtual environment
 ```
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-3. **Install Dependencies**:
-- Install required dependencies by running: `pip install -r requirements.txt`
+3. Install requirements
+```
+pip install -r requirements.txt
+```
 
-4. **Run the Script**:
-- In a new terminal, run the Python script `python client/runClient.py`
+4. Build the python-rust bindings with maturin
+```
+maturin build
+```
+*Take note of where the .whl file is built, usually /target/wheels/*
+
+5. Install the FFI library
+```
+pip install path/to/.whl
+```
+
+---
+## Running the App
+
+```
+python client/runClient.py
+```
 
 --- 
 ## Usage
+**Connect to the mixnet**
+	- Start the app
+	- Connect to the mixnet
 
  **Register a new user**:
-    - Open the application in your browser.
     - Navigate to the **Register** page, enter your username, and click **Register**.
     - The system will generate a key pair and send a registration request to the NymDirectory server.
 
 **Login**:
     - After registration, log in using your username to access the messaging features.
-    - You will be presented with a list of existing users and can start a conversation with them.
 
 **Search**
 	- To start a chat with a new user, click the search button in the top right. 
@@ -78,7 +78,7 @@ source venv/bin/activate
 --- 
 ## Script Overview
 
-- `connectionUtils.py`: Manages WebSocket connection to `nym-client`.
+- `connectionUtils.py`: Manages Mixnet operations using Rust-Python FFI library.
 - `cryptographyUtils.py`: Handles cryptographic operations like key generation, signing, encryption, and decryption.
 - `dbUtils.py`: Manages the local SQLite database for contacts and messages.
 - `messageHandler.py`: Handles the logic for registering, logging in, and managing messages.
