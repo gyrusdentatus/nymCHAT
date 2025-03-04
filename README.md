@@ -36,6 +36,7 @@ pip install -r requirements.txt
 
 4. Build the python-rust bindings with maturin
 ```
+maturin develop
 maturin build
 ```
 *Take note of where the .whl file is built, usually /target/wheels/*
