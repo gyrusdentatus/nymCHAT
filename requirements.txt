@@ -1,4 +1,3 @@
 nicegui
 cryptography
 maturin
-maturin[patchelf]
