@@ -1,5 +1,5 @@
 # runClient.py
-
+import threading
 import os
 import asyncio
 from nicegui import ui, app
@@ -8,7 +8,7 @@ from datetime import datetime
 
 from dbUtils import SQLiteManager
 from cryptographyUtils import CryptoUtils
-from connectionUtils import WebSocketClient
+from connectionUtils import MixnetConnectionClient
 from messageHandler import MessageHandler
 
 ###############################################################################
@@ -24,7 +24,6 @@ messages = {}         # {username: [(sender_id, msg_text, timestamp), ...]}
 
 chat_messages_container = None  # assigned in chat_page()
 
-
 def set_active_chat(value):
     global active_chat
     active_chat = value
@@ -37,17 +36,15 @@ def set_active_chat_user(value):
     global active_chat_user
     active_chat_user = value
 
-
 ###############################################################################
 # CREATE CORE OBJECTS
 ###############################################################################
 crypto_utils = CryptoUtils()
-websocket_client = WebSocketClient()
-message_handler = MessageHandler(crypto_utils, websocket_client)
-
+connection_client = MixnetConnectionClient()
+message_handler = MessageHandler(crypto_utils, connection_client)
 
 ###############################################################################
-# UTILITY: SCAN FOR USERS, LOAD CHATS FROM DB
+# UTILITY: SCAN FOR USERS, LOAD CHATS FROM DB, CONNECT TO MIXNET
 ###############################################################################
 def scan_for_users():
     global usernames
@@ -98,6 +95,22 @@ def load_chats_from_db():
 
     print("[INFO] Chat list and messages loaded from DB.")
 
+async def connect_mixnet():
+    print("[INFO] Initializing Mixnet client...")
+    await connection_client.init()
+    print("[INFO] Mixnet client initialized.")
+    nym_address = await connection_client.get_nym_address()
+    print(f"[INFO] My Nym Address: {nym_address}")
+    main_loop = asyncio.get_running_loop()
+    def message_callback(msg):
+        print(f"[DEBUG] Received raw message from server: {msg}")
+        asyncio.run_coroutine_threadsafe(message_handler.handle_incoming_message(msg), main_loop)
+    await connection_client.set_message_callback(message_callback)
+    print("[INFO] Message callback set.")
+    asyncio.create_task(connection_client.receive_messages())
+    print("[INFO] Started message receiving loop.")
+    ui.navigate.to("/welcome")  # Redirect to the welcome page after connection
+
 
 ###############################################################################
 # REFRESHABLE UI FOR CHAT
@@ -130,8 +143,6 @@ def render_chat_messages(current_user, target_chat, msg_dict):
 
     ui.run_javascript('window.scrollTo(0, document.body.scrollHeight)')  # Auto-scroll to latest message
 
-
-
 ###############################################################################
 # OUTGOING MESSAGES
 ###############################################################################
@@ -155,35 +166,44 @@ async def send_message(text_input):
     # 3) Re-render
     render_chat_messages.refresh(current_user, active_chat, messages)
 
-
 ###############################################################################
 # PAGE DEFINITIONS
 ###############################################################################
 @ui.page('/')
-def main_page():
-    with ui.column().classes('max-w-2xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
-        ui.label("NymCHAT").classes("text-3xl text-center font-bold mb-8")
-        ui.button("Login", color="green-6", on_click=lambda: ui.navigate.to("/login"), icon="login").classes("mb-2")
-        ui.button("Register", color="green-6", on_click=lambda: ui.navigate.to("/register"), icon="how_to_reg")
+def connect_page():
+    with ui.column().classes('max-w-4xl mx-auto items-center flex flex-col justify-center h-screen'):
+        ui.label("NymCHAT").classes("text-3xl font-bold mb-8")
+        with ui.row().classes('justify-center w-full'):
+            spin = ui.spinner(size='lg').props('hidden').classes("mb-4")
+        
+        async def do_connect():
+            spin.props(remove='hidden')  # Show the spinner
+            await connect_mixnet()        # Your async connection function
+            spin.props('hidden')          # Hide the spinner after connecting
+            ui.navigate.to("/welcome")    # Navigate within the UI slot
+        
+        ui.button("Connect to Mixnet", color="green-6", on_click=do_connect, icon="wifi")
 
+@ui.page('/welcome')
+def welcome_page():
+    with ui.column().classes('max-w-2xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+        ui.label("Welcome to NymCHAT").classes("text-3xl text-center font-bold mb-8")
+        ui.button("Login", color="green-6", on_click=lambda: ui.navigate.to("/login"), icon="login").classes("mb-2")
+        ui.button("Register", color="green-6", on_click=lambda: ui.navigate.to("/register"), icon="how_to_reg").classes("mb-2")
 
 @ui.page('/login')
 def login_page():
-    with ui.column().classes('max-w-4xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+    with ui.column().classes('max-w-2xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
         ui.label("Login").classes("text-2xl text-center font-bold mb-4")
         
-        scan_for_users()  # Assuming this function loads the usernames list
+        scan_for_users()  # Loads the list of usernames
 
-        # If there are usernames, display the user selection dropdown
         if usernames:
-            # Create the select dropdown for username selection
             user_select = ui.select(usernames, label="Select a User").props("outlined").classes("mb-2")
             
-            # Spinner that will show during login process
             with ui.row().classes('justify-center w-full'):
                 spin = ui.spinner(size='lg').props('hidden').classes("mb-4")
 
-            # Define the login function before using it in the button
             async def do_login():
                 if not user_select.value:
                     ui.notify("Please select a user.")
@@ -192,36 +212,29 @@ def login_page():
 
                 # Start the login process
                 await message_handler.login_user(user_select.value)
-                await message_handler.login_complete.wait()  # Wait until login is complete
+                await message_handler.login_complete.wait()
 
                 # After login, set up UI state and load chat data
                 message_handler.set_ui_state(messages, chat_list, get_active_chat, render_chat_messages, chat_messages_container)
-                load_chats_from_db()  # Assuming this loads the user's chat data from the database
+                load_chats_from_db()
 
-                spin.props('hidden')  # Hide the spinner once login is done
+                spin.props('hidden')  # Hide the spinner
 
-                # Check the login status and notify the user accordingly
                 if message_handler.login_successful:
                     ui.notify("Login successful! Welcome.")
-                    ui.navigate.to("/app")  # Navigate to the app page after login
+                    ui.navigate.to("/app")
                 else:
                     ui.notify("Login Failed: Did you delete your key file?")
 
-            # Login button, with do_login as the on_click handler
             ui.button("Login", color="green-6", on_click=do_login, icon="login").classes("mb-2")
-
         else:
-            # If no usernames are found, show a message to register first
             ui.label("No users found. Please register first.")
-            ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"), icon="arrow_back_ios_new").classes("mb-2")
 
-        # Back button to navigate to the previous page
-        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"), icon="arrow_back_ios_new").classes("mb-2")
-
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/welcome"), icon="arrow_back_ios_new").classes("mb-2")
 
 @ui.page('/register')
 def register_page():
-    with ui.column().classes('max-w-4xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
+    with ui.column().classes('max-w-2xl mx-auto items-stretch flex-grow gap-1 flex justify-center items-center h-screen w-full'):
         ui.label("Register a New User").classes("text-2xl text-center font-bold mb-4")
         user_in = ui.input(label="Username").props("outlined").classes("mb-2")
         
@@ -234,27 +247,20 @@ def register_page():
                 ui.notify("Username is required!")
                 return
 
-            # Show the spinner while registering
             spin.props(remove='hidden')
-
-            # Call the backend to register the user
             await message_handler.register_user(username)
-            await message_handler.registration_complete.wait()  # Wait for registration to complete
-
-            # Hide the spinner after registration completes
+            await message_handler.registration_complete.wait()
             spin.props('hidden')
 
-            # Check the registration status and notify the user
             if message_handler.registration_successful:
                 ui.notify("Registration completed! Please login.")
                 ui.navigate.to("/login")
             else:
                 ui.notify("Registration failed: Username is already in use.")
-                user_in.value = ""  # Clear the input box if registration fails
+                user_in.value = ""
 
         ui.button("Register", color="green-6", on_click=do_register, icon="how_to_reg").classes("mb-2")
-        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/"), icon="arrow_back_ios_new").classes("mb-2")
-
+        ui.button("Back", color="green-6", on_click=lambda: ui.navigate.to("/welcome"), icon="arrow_back_ios_new").classes("mb-2")
 
 @ui.page('/app')
 def chat_page():
@@ -265,21 +271,15 @@ def chat_page():
 
     global chat_messages_container  # Ensure it is globally accessible
 
-    # Function to show notifications for messages from inactive chats
     def show_new_message_notification(sender, message):
-        """Displays a notification when a message is received from an inactive chat."""
         ui.notify(f"New message from {sender}: {message}")
 
-    # Register the notification callback in messageHandler
     message_handler.new_message_callback = show_new_message_notification
 
-    # Ensure chat_messages_container is initialized
     chat_messages_container = ui.column().classes('flex-grow gap-2 overflow-auto')
 
-    # Function to Render Chat List (Sidebar)
     @ui.refreshable
     def chat_list_sidebar():
-        """Refreshable chat list sidebar that updates when new chats are added."""
         with ui.column():
             ui.label('Chats').classes('text-xl font-bold')
             if not chat_list:
@@ -290,62 +290,44 @@ def chat_page():
                     ui.label(info["name"]).classes('font-bold text-white')
                     ui.label('Click to open chat').classes('text-gray-400 text-sm')
 
-    # Function to Open a Chat
     def open_chat(u):
-        """When a chat row is clicked in the sidebar, set the active chat and refresh the UI."""
         set_active_chat(u["id"])
         set_active_chat_user(u["name"])
         chat_drawer.toggle()
         if chat_messages_container:
             render_chat_messages.refresh(user_id, active_chat, messages)
 
-    # Sidebar - Left Drawer (Always Visible by Default)
     with ui.left_drawer().classes('w-64 bg-zinc-700 text-white p-4') as chat_drawer:
-        chat_list_sidebar()  # Render the chat list inside the drawer
+        chat_list_sidebar()
 
-    # Top Bar (Header) with Sidebar Toggle Button
     with ui.header().classes('w-full bg-zinc-800 text-white p-4 items-center justify-between'):
-        # Left section: Sidebar Toggle and App Name
         with ui.row().classes('items-center gap-2'):
-            ui.button(icon='menu', color="", on_click=lambda: chat_drawer.toggle())  # Sidebar toggle
+            ui.button(icon='menu', color="", on_click=lambda: chat_drawer.toggle())
             ui.label('NymCHAT').classes('text-xl font-bold')
-
-        # Center section: Search Button
         ui.button('Search', color="green-6", on_click=lambda: ui.navigate.to('/search'), icon="search") \
             .classes('bg-blue-500 text-white p-2 rounded') \
-            .style('margin-left: auto; margin-right: auto;')  # Center the search button
-
-        # Expandable Floating Action Button (FAB) in the header (top-right)
+            .style('margin-left: auto; margin-right: auto;')
         with ui.element('q-fab').props('square icon=settings color=green-6 direction=left'):
-            # Actions inside the FAB (they will expand to the left)
             ui.element('q-fab-action').props('icon=logout color=green-6 label=LOGOUT') \
-                .on('click', lambda: ui.navigate.to('/'))  # Log out action
-            
-            # Shut down action calls the app.shutdown
+                .on('click', lambda: ui.navigate.to('/'))
             ui.element('q-fab-action').props('icon=power_settings_new color=green-6 label=SHUTDOWN') \
-                .on('click', lambda: (app.shutdown(), ui.notify("Shutting down the app...")))  # Shut down and notify
+                .on('click', lambda: (app.shutdown(), ui.notify("Shutting down the app...")))
 
-    # Pass chat_list_sidebar to messageHandler
     message_handler.set_ui_state(messages, chat_list, get_active_chat, render_chat_messages, chat_messages_container, chat_list_sidebar)
 
-    # Main Chat Display
-    render_chat_messages(user_id, active_chat, messages)  # Ensure it is called after initialization
+    render_chat_messages(user_id, active_chat, messages)
 
-    # Footer (Message Input)
     with ui.footer().classes('w-full bg-zinc-800 text-white p-4'):
         with ui.row().classes('w-full items-center'):
             text_in = ui.input(placeholder='Type a message...') \
                 .props('rounded outlined input-class=mx-3') \
                 .classes('flex-grow bg-zinc-700 text-white p-2 rounded-lg') \
                 .on('keydown.enter', lambda: asyncio.create_task(send_message(text_in)))
-
             ui.button('Send', color="green-6", icon="send", on_click=lambda: asyncio.create_task(send_message(text_in))) \
                 .classes('text-white p-2 rounded')
 
-
 @ui.page('/search')
 def search_page():
-    """User Search Page for queries."""
     with ui.header().classes('w-full bg-zinc-950 text-white p-4 justify-between'):
         ui.button('Back', color="green-6", icon="arrow_back_ios_new", on_click=lambda: ui.navigate.to('/app')).classes('text-white p-2 rounded')
     
@@ -364,20 +346,15 @@ def search_page():
             username = search_in.value.strip()
             with profile_container:
                 profile_container.clear()
-
                 if not username:
                     ui.notify("Enter a username to search.")
                     return
-
                 ui.notify(f"Searching for '{username}'...")
-
             result = await message_handler.query_user(username)
-
             with profile_container:
                 if result is None:
                     ui.notify("Error or no response from server.")
                     return
-
                 if isinstance(result, str):
                     ui.notify(result)
                 elif isinstance(result, dict):
@@ -386,46 +363,41 @@ def search_page():
                         ui.label(f"Username: {user_data.get('username') or 'N/A'}").classes('text-xl font-bold')
                         partial_key = (user_data.get('publicKey') or '')[:50]
                         ui.label(f"Public Key (partial): {partial_key}...")
-
                         def start_chat():
                             new_chat = {"id": user_data["username"], "name": user_data["username"]}
                             if new_chat not in chat_list:
                                 chat_list.append(new_chat)
                             ui.navigate.to('/app')
-
                         ui.button('Start Chat', color='green-6', icon="chat", on_click=start_chat).classes('text-white p-2 mt-2 rounded')
                 else:
                     ui.notify("Unexpected response format from server.")
-
 
 ###############################################################################
 # APP STARTUP
 ###############################################################################
 @app.on_startup
 async def startup_sequence():
-    """Initialize WebSocket, set single callback, and jump to main page."""
-    scan_for_users()
-
-    # The single callback from connectionUtils
-    # => all inbound messages go to message_handler.handle_incoming_message
-    websocket_client.set_message_callback(message_handler.handle_incoming_message)
-
-    try:
-        await websocket_client.connect()
-        print("[INFO] WebSocket connected successfully.")
-    except Exception as e:
-        print(f"[ERROR] WebSocket connection failed: {e}")
-        ui.notify("WebSocket connection failed.")
-
-    # Now optionally let messageHandler know how to update local chat + UI
+    # UI Setup
     message_handler.set_ui_state(
         messages,               # in-memory messages dict
-        chat_list,             # in-memory chat_list
-        get_active_chat,       # function to retrieve 'active_chat'
-        render_chat_messages,  # your @ui.refreshable function
-        chat_messages_container  # container (if needed)
+        chat_list,              # in-memory chat_list
+        get_active_chat,        # function to retrieve 'active_chat'
+        render_chat_messages,   # your @ui.refreshable function
+        chat_messages_container # container (if needed)
     )
 
-    ui.navigate.to("/")
+def shutdown_client():
+    # Create a new event loop in this thread and run the shutdown coroutine
+    asyncio.run(connection_client.shutdown())
 
+@app.on_shutdown
+def on_shutdown():
+    if connection_client.client is not None:
+        print("[INFO] Shutting down Mixnet client...")
+        t = threading.Thread(target=shutdown_client)
+        t.start()
+        t.join()  # Wait for the shutdown to complete
+        print("[INFO] Mixnet client shutdown complete.")
+        
 ui.run(dark=True, host='127.0.0.1', title="NymCHAT")
+

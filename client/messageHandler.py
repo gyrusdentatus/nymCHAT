@@ -5,13 +5,13 @@ from datetime import datetime
 from cryptography.hazmat.primitives import serialization
 from mixnetMessages import MixnetMessage
 from cryptographyUtils import CryptoUtils
-from connectionUtils import WebSocketClient
+from connectionUtils import MixnetConnectionClient
 from dbUtils import SQLiteManager
 
 class MessageHandler:
-    def __init__(self, crypto_utils: CryptoUtils, websocket_client: WebSocketClient):
+    def __init__(self, crypto_utils: CryptoUtils, connection_client: MixnetConnectionClient):
         self.crypto_utils = crypto_utils
-        self.websocket_client = websocket_client
+        self.connection_client = connection_client
         self.current_user = {"username": None}
         self.temporary_keys = {"private_key": None, "public_key": None}
         self.db_manager = None  # Will be set after login/registration
@@ -36,8 +36,6 @@ class MessageHandler:
         self.chat_list_sidebar_fn = None  # For refreshing the chat list sidebar
         self.chat_container = None
         self.new_message_callback = None  # To notify UI of new messages
-
-
 
     def set_ui_state(self, messages, chat_list, get_active_chat, render_chat, chat_container, chat_list_sidebar_fn=None):
         """
@@ -68,7 +66,7 @@ class MessageHandler:
 
             # Send a 'register' message (only username and public key are used)
             register_msg = MixnetMessage.register(usernym=username, publicKey=public_key)
-            await self.websocket_client.send_message(register_msg)
+            await self.connection_client.send_message(register_msg)
             print("[INFO] Registration message sent; waiting for challenge...")
 
             await self.registration_complete.wait()
@@ -90,7 +88,7 @@ class MessageHandler:
             print(f"[INFO] Loaded private key for {username}")
 
             msg = MixnetMessage.login(username)
-            await self.websocket_client.send_message(msg)
+            await self.connection_client.send_message(msg)
             print("[INFO] Login message sent; waiting for challenge...")
 
             await self.login_complete.wait()
@@ -111,7 +109,7 @@ class MessageHandler:
         try:
             signature = self.crypto_utils.sign_message_with_key(private_key, nonce)
             resp = MixnetMessage.registrationResponse(self.current_user["username"], signature)
-            await self.websocket_client.send_message(resp)
+            await self.connection_client.send_message(resp)
             print("[INFO] Registration challenge response sent.")
         except Exception as e:
             print(f"[ERROR] Signing registration nonce: {e}")
@@ -129,7 +127,7 @@ class MessageHandler:
         try:
             signature = self.crypto_utils.sign_message_with_key(private_key, nonce)
             resp = MixnetMessage.loginResponse(self.current_user["username"], signature)
-            await self.websocket_client.send_message(resp)
+            await self.connection_client.send_message(resp)
             print("[INFO] Login challenge response sent.")
         except Exception as e:
             print(f"[ERROR] Signing login nonce: {e}")
@@ -247,7 +245,7 @@ class MessageHandler:
         payload_str = json.dumps(payload)
         signature = self.crypto_utils.sign_message_with_key(sender_private_key, payload_str)
         msg = MixnetMessage.send(content=payload_str, signature=signature)
-        await self.websocket_client.send_message(msg)
+        await self.connection_client.send_message(msg)
         print(f"[INFO] Sent direct message to {recipient_username}")
 
         self.db_manager.save_message(
@@ -271,7 +269,7 @@ class MessageHandler:
             self.query_result = None
 
             msg = MixnetMessage.query(target_username)
-            await self.websocket_client.send_message(msg)
+            await self.connection_client.send_message(msg)
             print(f"[INFO] Sent query for user: {target_username}")
 
             await self.query_result_event.wait()
@@ -294,18 +292,14 @@ class MessageHandler:
     # --------------------------------------------------------------------------
     # Handling Incoming Messages (SINGLE CALLBACK)
     # --------------------------------------------------------------------------
-
-    async def handle_incoming_message(self, data):
+    async def handle_incoming_message(self, message):
         """
-        Handles incoming messages, updating the UI and local database.
+        Handles incoming messages from the mixnet FFI.
+        Expects a JSON string (with inner encapsulated message data).
         """
-        message_type = data.get("type")
-        if message_type != "received":
-            print(f"[WARNING] Unknown message type: {message_type}")
-            return
-
         try:
-            encapsulated_data = json.loads(data.get("message", "{}"))
+            # 'message' is a JSON string (without the outer websocket envelope)
+            encapsulated_data = json.loads(message)
             action = encapsulated_data.get("action")
             context = encapsulated_data.get("context")
             content = encapsulated_data.get("content")
@@ -337,18 +331,15 @@ class MessageHandler:
                 if isinstance(content, dict):
                     from_user = content.get("sender")
                     # Determine if the message is encrypted.
-                    # Here we assume that if "body" is a dict, it's encrypted.
                     if isinstance(content.get("body"), dict):
                         is_encrypted = True
                     else:
                         is_encrypted = content.get("encrypted", False)
 
                     if is_encrypted:
-                        # For encrypted messages, try to get the sender's public key.
                         sender_pub_from_msg = content.get("senderPublicKey")
                         if self.db_manager and not self.db_manager.get_contact(self.current_user["username"], from_user) and sender_pub_from_msg:
                             self.db_manager.add_contact(self.current_user["username"], from_user, sender_pub_from_msg)
-                        # Retrieve sender's public key from DB if available; otherwise, use the one from the message.
                         contact = self.db_manager.get_contact(self.current_user["username"], from_user) if self.db_manager else None
                         if contact:
                             sender_public_key_pem = contact[1]
@@ -372,7 +363,6 @@ class MessageHandler:
                             if sender_pub:
                                 self.db_manager.add_contact(self.current_user["username"], from_user, sender_pub)
 
-                    # Ensure decrypted_msg is a string.
                     if isinstance(decrypted_msg, dict):
                         decrypted_msg = json.dumps(decrypted_msg)
 
@@ -430,3 +420,4 @@ class MessageHandler:
 
         except json.JSONDecodeError:
             print("[ERROR] Could not decode the message content.")
+

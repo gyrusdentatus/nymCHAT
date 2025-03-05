@@ -1,57 +1,48 @@
-import asyncio
 import json
-import websockets
+from async_ffi import PyMixnetClient
 
-class WebSocketClient:
-    def __init__(self, server_url="ws://127.0.0.1:1977"):
-        self.server_url = server_url
-        self.websocket = None
-        self.message_callback = None  # Callback for processing messages
+class MixnetConnectionClient:
+    def __init__(self):
+        self.client = None  # Will be initialized asynchronously
 
-    async def connect(self):
-        """Establish a WebSocket connection with the Nym client."""
-        try:
-            self.websocket = await websockets.connect(self.server_url)
-            await self.websocket.send(json.dumps({"type": "selfAddress"}))
-            response = await self.websocket.recv()
-            data = json.loads(response)
-            self_address = data.get("address")
-            print("Connected to WebSocket. Your Nym Address:", self_address)
+    async def init(self):
+        """
+        Asynchronously initialize the mixnet client.
+        """
+        self.client = await PyMixnetClient.create()
 
-            await self.receive_messages()  # Start listening for incoming messages
-        except Exception as e:
-            print("Connection error:", e)
-
-    async def receive_messages(self):
-        """Listen for incoming messages."""
-        try:
-            while True:
-                message = await self.websocket.recv()
-                print(message)
-                data = json.loads(message)
-
-                # Call the callback if set
-                if self.message_callback:
-                    await self.message_callback(data)
-                else:
-                    print(f"[WARNING] No callback set for processing messages. Received: {data}")
-        except websockets.exceptions.ConnectionClosed:
-            print("Connection closed by the server.")
-        except Exception as e:
-            print(f"Error while receiving messages: {e}")
+    async def get_nym_address(self):
+        """
+        Asynchronously retrieve the client's Nym address.
+        """
+        return await self.client.get_nym_address()
 
     async def send_message(self, message):
-        """Send a message through the WebSocket."""
-        try:
-            if isinstance(message, dict):
-                # Convert the dictionary to a JSON string
-                message = json.dumps(message)
-            await self.websocket.send(message)
-            print(f"Message sent: {message}")
-        except Exception as e:
-            print(f"Error sending message: {e}")
+        """
+        Send a message using the async mixnet FFI.
+        Expects `message` to be a dict with at least 'recipient' and 'message' keys.
+        """
+        recipient = message.get("recipient")
+        msg = message.get("message")
+        if not recipient or not msg:
+            raise ValueError("Both 'recipient' and 'message' must be provided.")
+        await self.client.send_message(recipient, msg)
 
-    def set_message_callback(self, callback):
-        """Set the callback function for processing received messages."""
-        self.message_callback = callback
+    async def set_message_callback(self, callback):
+        """
+        Set a callback function for incoming messages.
+        """
+        await self.client.set_message_callback(callback)
 
+    async def receive_messages(self):
+        """
+        Start receiving messages from the Mixnet.
+        """
+        print("[DEBUG] Starting Mixnet message receiver loop...")
+        await self.client.receive_messages()  # Ensure this is awaited properly
+
+    async def shutdown(self):
+        """
+        Asynchronously shut down the mixnet client.
+        """
+        await self.client.shutdown()
