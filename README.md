@@ -14,8 +14,7 @@ NymCHAT is a messaging client that routes all traffic through the Nym Mixnet for
 - Python 3.11+
 - Rust
 ---
-## Set Up
-In order to communicate with the mixnet, we use the Nym Rust SDK with pyo3 bindings If you are on linux, you can install the pre-existing .whl, or build yourself. 
+## Set Up  
 
 1.  Clone this repository and navigate to the directory:
 ```
@@ -26,7 +25,7 @@ cd nymChat
 2. Create & activate python virtual environment
 ```
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate # Windows: .venv\Scripts\activate
 ```
 
 3. Install requirements
@@ -34,23 +33,24 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-4. Build the python-rust bindings with maturin
+4. Build the python-rust bindings
 ```
-maturin develop
-maturin build
+cd async_ffi # change to the rust ffi directory 
+maturin build # build the .whl
 ```
-*Take note of where the .whl file is built, usually /target/wheels/*
+*Take note of where the .whl file is built, usually `/target/wheels/`*
 
 5. Install the FFI library
 ```
-pip install path/to/.whl
+pip install target/wheels/async_ffi*.whl
 ```
 
 ---
 ## Running the App
 
 ```
-python client/runClient.py
+cd .. # go back to the project home directory
+python client/runClient.py # launch the client
 ```
 
 --- 
@@ -67,7 +67,7 @@ python client/runClient.py
     - After registration, log in using your username to access the messaging features.
 
 **Search**
-	- To start a chat with a new user, click the search button in the top right. 
+	- To start a chat with a new user, click the search button at the top. 
 	- Enter the username and click search. *Note: Usernames are CASE SENSITIVE*
 
 **Send Messages**:
@@ -95,7 +95,7 @@ I plan on developing this into a full-featured cross platform messaging app. If 
 
 **TODO:**
 - Upgrade cryptography to MLS
-- Groupchats and channels
+- Groupchats
 
 ---
 ## License
