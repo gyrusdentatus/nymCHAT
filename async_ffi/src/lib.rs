@@ -11,7 +11,6 @@ struct PyMixnetClient {
 
 #[pymethods]
 impl PyMixnetClient {
-    /// Create a new Mixnet client asynchronously.
     #[staticmethod]
     fn create(py: Python) -> PyResult<&PyAny> {
         future_into_py(py, async {
@@ -22,7 +21,6 @@ impl PyMixnetClient {
         })
     }
 
-    /// Retrieve the client's Nym address.
     #[pyo3(name = "get_nym_address")]
     fn get_nym_address<'a>(&self, py: Python<'a>) -> PyResult<&'a PyAny> {
         let client = self.inner.clone();
@@ -31,7 +29,6 @@ impl PyMixnetClient {
         })
     }
 
-    /// Send a message through the Mixnet.
     #[pyo3(name = "send_message")]
     fn send_message<'a>(
         &self,
@@ -48,7 +45,6 @@ impl PyMixnetClient {
         })
     }
 
-    /// Start listening for incoming messages (ensures only one listener runs).
     #[pyo3(name = "receive_messages")]
     fn receive_messages<'a>(&self, py: Python<'a>) -> PyResult<&'a PyAny> {
         let client = self.inner.clone();
@@ -58,7 +54,6 @@ impl PyMixnetClient {
         })
     }
 
-    /// Set a callback function for incoming messages.
     #[pyo3(name = "set_message_callback")]
     fn set_message_callback<'a>(&self, py: Python<'a>, py_callback: PyObject) -> PyResult<&'a PyAny> {
         let client = self.inner.clone();
@@ -68,7 +63,6 @@ impl PyMixnetClient {
         })
     }
 
-    /// Shut down the client.
     #[pyo3(name = "shutdown")]
     fn shutdown<'a>(&self, py: Python<'a>) -> PyResult<&'a PyAny> {
         let client = self.inner.clone();

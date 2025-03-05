@@ -1,44 +1,46 @@
 use futures::StreamExt;
 use nym_sdk::mixnet::{MixnetClient, MixnetClientSender, MixnetMessageSender, Recipient};
 use std::sync::Arc;
-use tokio::sync::{Mutex, Notify}; // ✅ Import Notify for shutdown signaling
-use pyo3::prelude::*; // Needed for PyObject
+use tokio::sync::{Mutex, Notify};
+use pyo3::prelude::*;
 
 pub struct MixnetHandler {
     client: Arc<Mutex<Option<MixnetClient>>>,
     sender: MixnetClientSender,
     message_callback: Arc<Mutex<Option<PyObject>>>,
-    listening: Arc<Mutex<bool>>, // Track if the listener is running
-    shutdown_signal: Arc<Notify>, // ✅ Shutdown signal for stopping the listener
+    listening: Arc<Mutex<bool>>,
+    shutdown_signal: Arc<Notify>,
 }
 
 impl MixnetHandler {
     /// Creates a new Mixnet client.
     pub async fn new() -> anyhow::Result<Self> {
-        let client = MixnetClient::connect_new().await?;
+        let client = nym_sdk::mixnet::MixnetClientBuilder::new_ephemeral()
+            .build()
+            .unwrap()
+            .connect_to_mixnet()
+            .await
+            .unwrap();
         let sender = client.split_sender();
         Ok(Self {
             client: Arc::new(Mutex::new(Some(client))),
             sender,
             message_callback: Arc::new(Mutex::new(None)),
-            listening: Arc::new(Mutex::new(false)), // Initialize listener state
-            shutdown_signal: Arc::new(Notify::new()), // ✅ Initialize shutdown signal
+            listening: Arc::new(Mutex::new(false)),
+            shutdown_signal: Arc::new(Notify::new()),
         })
     }
 
-    /// Sets a Python callback for handling incoming messages.
     pub async fn set_callback(&self, callback: PyObject) {
         let mut cb = self.message_callback.lock().await;
         *cb = Some(callback);
     }
 
-    /// Retrieves the client's Nym address.
     pub async fn get_nym_address(&self) -> Option<String> {
         let lock = self.client.lock().await;
         lock.as_ref().map(|c| c.nym_address().to_string())
     }
 
-    /// Sends a message through the Mixnet.
     pub async fn send_message(&self, recipient: &str, message: &str) -> anyhow::Result<()> {
         let parsed_recipient = recipient.parse::<Recipient>()?;
         println!("🚀 Sending message to: {}", recipient);
@@ -47,7 +49,6 @@ impl MixnetHandler {
         Ok(())
     }
 
-    /// Start listening for incoming messages (only if not already running).
     pub async fn receive_messages(&self) {
         let mut listening = self.listening.lock().await;
         if *listening {
@@ -55,11 +56,11 @@ impl MixnetHandler {
             return;
         }
         *listening = true;
-        drop(listening); // Release the lock before spawning
+        drop(listening);
 
         let client_ref = Arc::clone(&self.client);
         let callback_ref = Arc::clone(&self.message_callback);
-        let shutdown_signal = Arc::clone(&self.shutdown_signal); // ✅ Clone shutdown signal
+        let shutdown_signal = Arc::clone(&self.shutdown_signal);
 
         tokio::spawn(async move {
             let mut lock = client_ref.lock().await;
@@ -67,7 +68,7 @@ impl MixnetHandler {
                 println!("📡 Listening for incoming messages...");
                 loop {
                     tokio::select! {
-                        _ = shutdown_signal.notified() => { // ✅ Stop when shutdown is triggered
+                        _ = shutdown_signal.notified() => {
                             println!("🛑 Listener stopping...");
                             break;
                         }
@@ -94,10 +95,9 @@ impl MixnetHandler {
         });
     }
 
-    /// Disconnects the Mixnet client.
     pub async fn disconnect(&self) {
         println!("🚪 Stopping background tasks...");
-        self.shutdown_signal.notify_waiters(); // ✅ Signal the listener to stop
+        self.shutdown_signal.notify_waiters();
 
         let mut lock = self.client.lock().await;
         if let Some(client) = lock.take() {
