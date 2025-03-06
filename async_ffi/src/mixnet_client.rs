@@ -3,6 +3,7 @@ use nym_sdk::mixnet::{MixnetClient, MixnetClientSender, MixnetMessageSender, Rec
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
 use pyo3::prelude::*;
+use anyhow::Context;
 
 pub struct MixnetHandler {
     client: Arc<Mutex<Option<MixnetClient>>>,
@@ -17,10 +18,11 @@ impl MixnetHandler {
     pub async fn new() -> anyhow::Result<Self> {
         let client = nym_sdk::mixnet::MixnetClientBuilder::new_ephemeral()
             .build()
-            .unwrap()
+            .context("Failed to build ephemeral client")?
             .connect_to_mixnet()
             .await
-            .unwrap();
+            .context("Failed to connect to mixnet")?;
+
         let sender = client.split_sender();
         Ok(Self {
             client: Arc::new(Mutex::new(Some(client))),
@@ -42,12 +44,26 @@ impl MixnetHandler {
     }
 
     pub async fn send_message(&self, recipient: &str, message: &str) -> anyhow::Result<()> {
-        let parsed_recipient = recipient.parse::<Recipient>()?;
-        println!("🚀 Sending message to: {}", recipient);
-        self.sender.send_plain_message(parsed_recipient, message).await?;
-        println!("✅ Message sent successfully!");
-        Ok(())
-    }
+    let parsed_recipient = recipient
+        .parse::<Recipient>()
+        .context("Failed to parse recipient address")?;
+
+    println!("🚀 Sending message to: {}", recipient);
+
+    self.sender
+        .send_message(
+            parsed_recipient,
+            message.as_bytes().to_vec(),
+            nym_sdk::mixnet::IncludedSurbs::Amount(10), // 👈 Corrected here
+        )
+        .await
+        .context("Failed to send message with SURBs")?;
+
+    println!("✅ Message sent successfully with 10 SURBs included!");
+    Ok(())
+}
+
+
 
     pub async fn receive_messages(&self) {
         let mut listening = self.listening.lock().await;
