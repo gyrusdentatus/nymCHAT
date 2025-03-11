@@ -37,6 +37,17 @@ class MessageHandler:
         self.chat_container = None
         self.new_message_callback = None  # To notify UI of new messages
 
+        # Ephemeral mapping of usernames to nym addresses for p2p routing
+        self.nym_addresses = {}  # {username: nym_address}
+
+        # Store our own nym address (to be set externally after mixnet initialization)
+        self.nym_address = None
+
+    def update_nym_address(self, nym_address):
+        """Update the client's own nym address in MessageHandler."""
+        self.nym_address = nym_address
+        print(f"[INFO] Updated own nym address in MessageHandler: {nym_address}")
+
     def set_ui_state(self, messages, chat_list, get_active_chat, render_chat, chat_container, chat_list_sidebar_fn=None):
         """
         Optionally call this from runClient.py if you want to update UI state
@@ -164,10 +175,9 @@ class MessageHandler:
             self.registration_complete.set()  # Signal that registration is complete
 
         else:
-            # Handle registration failure (e.g., username already in use)
             print(f"[ERROR] Registration failed: {content}")
             self.registration_successful = False
-            self.registration_complete.set()  # Ensure the event is set
+            self.registration_complete.set()
 
     async def handle_login_response(self, content):
         """
@@ -183,21 +193,20 @@ class MessageHandler:
             except Exception as e:
                 print(f"[ERROR] DB init: {e}")
                 self.login_successful = False
-                self.login_complete.set()  # Ensure the event is set
+                self.login_complete.set()
                 return
 
-            self.login_successful = True  # Login is successful
-            self.login_complete.set()  # Signal that login is complete
+            self.login_successful = True
+            self.login_complete.set()
 
         else:
             print(f"[ERROR] Login failed: {content}")
             self.login_successful = False
-            self.login_complete.set()  # Signal that login is complete even if it failed
+            self.login_complete.set()
 
     # --------------------------------------------------------------------------
     # Sending Direct Messages (All messages encrypted)
     # --------------------------------------------------------------------------
-
     async def send_direct_message(self, recipient_username, message_content):
         if not recipient_username or not message_content.strip():
             return
@@ -211,29 +220,26 @@ class MessageHandler:
             print("[ERROR] DB manager not initialized.")
             return
 
-        # Retrieve recipient's details from the DB; they must exist.
         contact = self.db_manager.get_contact(self.current_user["username"], recipient_username)
         if not contact:
             print(f"[ERROR] No contact record found for {recipient_username}. Cannot send message.")
             return
 
-        # Determine if there is any prior message history.
         existing_msgs = self.db_manager.get_messages_by_contact(self.current_user["username"], recipient_username)
         initial_message = not existing_msgs
 
-        # Always encrypt the message using the recipient's public key.
         recipient_public_key_pem = contact[1]
         recipient_public_key = serialization.load_pem_public_key(recipient_public_key_pem.encode())
-        enc_result = self.crypto_utils.encrypt_message(message_content, sender_private_key, recipient_public_key)
 
-        # Build payload.
+        wrapped_message = json.dumps({"type": 0, "message": message_content})
+        enc_result = self.crypto_utils.encrypt_message(wrapped_message, sender_private_key, recipient_public_key)
+
         payload = {
             "sender": self.current_user["username"],
             "recipient": recipient_username,
-            "body": enc_result,  # A dict with iv, ciphertext, and tag.
+            "body": enc_result,
             "encrypted": True
         }
-        # Only attach our public key on the initial message.
         if initial_message:
             sender_public_key_obj = self.crypto_utils.load_public_key(self.current_user["username"])
             sender_public_key_pem = sender_public_key_obj.public_bytes(
@@ -244,7 +250,12 @@ class MessageHandler:
 
         payload_str = json.dumps(payload)
         signature = self.crypto_utils.sign_message_with_key(sender_private_key, payload_str)
-        msg = MixnetMessage.send(content=payload_str, signature=signature)
+        # If a p2p nym address exists for this recipient, encapsulate as a directMessage.
+        if recipient_username in self.nym_addresses:
+            msg = MixnetMessage.directMessage(content=payload_str, signature=signature)
+            msg["recipient"] = self.nym_addresses[recipient_username]
+        else:
+            msg = MixnetMessage.send(content=payload_str, signature=signature)
         await self.connection_client.send_message(msg)
         print(f"[INFO] Sent direct message to {recipient_username}")
 
@@ -255,14 +266,58 @@ class MessageHandler:
             message=message_content
         )
 
+    async def send_handshake(self, recipient_username):
+        """
+        Sends a handshake (type 1 message) containing this client's nym address.
+        """
+        if self.nym_address is None:
+            print("[ERROR] Nym address not set in MessageHandler.")
+            return
+
+        sender_private_key = self.crypto_utils.load_private_key(self.current_user["username"])
+        if not sender_private_key:
+            print("[ERROR] No private key available for handshake.")
+            return
+
+        if not self.db_manager:
+            print("[ERROR] DB manager not initialized.")
+            return
+
+        contact = self.db_manager.get_contact(self.current_user["username"], recipient_username)
+        if not contact:
+            print(f"[ERROR] No contact record found for {recipient_username}. Cannot send handshake.")
+            return
+
+        recipient_public_key_pem = contact[1]
+        recipient_public_key = serialization.load_pem_public_key(recipient_public_key_pem.encode())
+
+        handshake_payload = json.dumps({"type": 1, "message": self.nym_address})
+        enc_result = self.crypto_utils.encrypt_message(handshake_payload, sender_private_key, recipient_public_key)
+
+        payload = {
+            "sender": self.current_user["username"],
+            "recipient": recipient_username,
+            "body": enc_result,
+            "encrypted": True
+        }
+        payload_str = json.dumps(payload)
+        signature = self.crypto_utils.sign_message_with_key(sender_private_key, payload_str)
+
+        if recipient_username in self.nym_addresses:
+            msg = MixnetMessage.directMessage(content=payload_str, signature=signature)
+            msg["recipient"] = self.nym_addresses[recipient_username]
+        else:
+            msg = MixnetMessage.send(content=payload_str, signature=signature)
+        await self.connection_client.send_message(msg)
+
+        print(f"[INFO] Sent handshake (nym address) to {recipient_username}")
+
     async def handle_send_response(self, content):
-        # Optional: display a UI notification if desired.
         pass
 
     # --------------------------------------------------------------------------
     # Query
     # --------------------------------------------------------------------------
-
     async def query_user(self, target_username):
         try:
             self.query_result_event.clear()
@@ -282,7 +337,6 @@ class MessageHandler:
         self.query_result = content
         self.query_result_event.set()
         print(f"[INFO] queryResponse: {content}")
-        # Store the public key along with the username if provided.
         if self.db_manager and isinstance(content, dict):
             username = content.get("username")
             public_key = content.get("publicKey")
@@ -293,18 +347,12 @@ class MessageHandler:
     # Handling Incoming Messages (SINGLE CALLBACK)
     # --------------------------------------------------------------------------
     async def handle_incoming_message(self, message):
-        """
-        Handles incoming messages from the mixnet FFI.
-        Expects a JSON string (with inner encapsulated message data).
-        """
         try:
-            # 'message' is a JSON string (without the outer websocket envelope)
             encapsulated_data = json.loads(message)
             action = encapsulated_data.get("action")
             context = encapsulated_data.get("context")
             content = encapsulated_data.get("content")
 
-            # If 'content' is a JSON string, try decoding it.
             if isinstance(content, str):
                 try:
                     content = json.loads(content)
@@ -330,7 +378,6 @@ class MessageHandler:
             elif action == "incomingMessage":
                 if isinstance(content, dict):
                     from_user = content.get("sender")
-                    # Determine if the message is encrypted.
                     if isinstance(content.get("body"), dict):
                         is_encrypted = True
                     else:
@@ -358,20 +405,29 @@ class MessageHandler:
                                 decrypted_msg = content.get("body")
                     else:
                         decrypted_msg = content.get("body")
-                        if self.db_manager and not self.db_manager.get_contact(self.current_user["username"], from_user):
-                            sender_pub = content.get("senderPublicKey")
-                            if sender_pub:
-                                self.db_manager.add_contact(self.current_user["username"], from_user, sender_pub)
 
-                    if isinstance(decrypted_msg, dict):
-                        decrypted_msg = json.dumps(decrypted_msg)
+                    try:
+                        message_obj = json.loads(decrypted_msg)
+                    except Exception as e:
+                        message_obj = {"type": 0, "message": decrypted_msg}
 
-                    if from_user and decrypted_msg and self.db_manager:
+                    if message_obj.get("type") == 1:
+                        nym_addr = message_obj.get("message")
+                        if nym_addr:
+                            self.nym_addresses[from_user] = nym_addr
+                            print(f"[INFO] Received handshake from {from_user}. Updated nym address: {nym_addr}")
+                        else:
+                            print(f"[WARNING] Handshake message from {from_user} missing nym address.")
+                        return
+                    else:
+                        actual_message = message_obj.get("message")
+
+                    if from_user and actual_message and self.db_manager:
                         self.db_manager.save_message(
                             self.current_user["username"],
                             from_user,
                             'from',
-                            decrypted_msg
+                            actual_message
                         )
                         print(f"[INFO] Stored incoming message from {from_user} in DB.")
 
@@ -379,7 +435,7 @@ class MessageHandler:
                             if from_user not in self.chat_messages:
                                 self.chat_messages[from_user] = []
                             stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            self.chat_messages[from_user].append((from_user, decrypted_msg, stamp))
+                            self.chat_messages[from_user].append((from_user, actual_message, stamp))
 
                             if not any(chat["id"] == from_user for chat in self.chat_list):
                                 self.chat_list.append({"id": from_user, "name": from_user})
@@ -401,7 +457,7 @@ class MessageHandler:
                                         print(f"[ERROR] Failed to refresh chat UI: {e}")
                             else:
                                 if self.new_message_callback:
-                                    self.new_message_callback(from_user, decrypted_msg)
+                                    self.new_message_callback(from_user, actual_message)
                         else:
                             print("[WARNING] chat_messages is None; UI might not be initialized.")
                     else:
