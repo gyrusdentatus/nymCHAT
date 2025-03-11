@@ -118,7 +118,7 @@ class MessageHandler:
             return
 
         try:
-            signature = self.crypto_utils.sign_message_with_key(private_key, nonce)
+            signature = self.crypto_utils.sign_message(private_key, nonce)
             resp = MixnetMessage.registrationResponse(self.current_user["username"], signature)
             await self.connection_client.send_message(resp)
             print("[INFO] Registration challenge response sent.")
@@ -136,7 +136,7 @@ class MessageHandler:
             return
 
         try:
-            signature = self.crypto_utils.sign_message_with_key(private_key, nonce)
+            signature = self.crypto_utils.sign_message(private_key, nonce)
             resp = MixnetMessage.loginResponse(self.current_user["username"], signature)
             await self.connection_client.send_message(resp)
             print("[INFO] Login challenge response sent.")
@@ -249,7 +249,7 @@ class MessageHandler:
             payload["senderPublicKey"] = sender_public_key_pem
 
         payload_str = json.dumps(payload)
-        signature = self.crypto_utils.sign_message_with_key(sender_private_key, payload_str)
+        signature = self.crypto_utils.sign_message(sender_private_key, payload_str)
         # If a p2p nym address exists for this recipient, encapsulate as a directMessage.
         if recipient_username in self.nym_addresses:
             msg = MixnetMessage.directMessage(content=payload_str, signature=signature)
@@ -301,7 +301,7 @@ class MessageHandler:
             "encrypted": True
         }
         payload_str = json.dumps(payload)
-        signature = self.crypto_utils.sign_message_with_key(sender_private_key, payload_str)
+        signature = self.crypto_utils.sign_message(sender_private_key, payload_str)
 
         if recipient_username in self.nym_addresses:
             msg = MixnetMessage.directMessage(content=payload_str, signature=signature)

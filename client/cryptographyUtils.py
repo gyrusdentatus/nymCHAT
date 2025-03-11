@@ -110,21 +110,7 @@ class CryptoUtils:
             )
             return True
         except Exception as e:
-            print(f"Error verifying signature: {e}")
             return False
-
-    def sign_message_with_key(self, private_key, message):
-        """
-        Sign a message using an in-memory private key.
-        :param private_key: The private key object.
-        :param message: The message to sign.
-        :return: The signature in hexadecimal format.
-        """
-        signature = private_key.sign(
-            message.encode(),
-            ec.ECDSA(hashes.SHA256())
-        )
-        return signature.hex()
 
     # -----------------------------
     # New methods for encryption
