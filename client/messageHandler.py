@@ -476,4 +476,3 @@ class MessageHandler:
 
         except json.JSONDecodeError:
             print("[ERROR] Could not decode the message content.")
-

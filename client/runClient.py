@@ -271,7 +271,6 @@ def register_page():
                 ui.notify("Registration completed! Please login.")
                 ui.navigate.to("/login")
             else:
-                ui.notify("Registration failed: Username is already in use.")
                 user_in.value = ""
 
         ui.button("Register", color="green-6", on_click=do_register, icon="how_to_reg").classes("mb-2")
@@ -286,12 +285,14 @@ def chat_page():
 
     global chat_messages_container  # Ensure accessibility
 
+    chat_messages_container = ui.column().classes('flex-grow gap-2 overflow-auto')
+
     def show_new_message_notification(sender, message):
-        ui.notify(f"New message from {sender}: {message}")
+        with chat_messages_container:
+            ui.notify(f"New message from {sender}: {message}")
 
     message_handler.new_message_callback = show_new_message_notification
 
-    chat_messages_container = ui.column().classes('flex-grow gap-2 overflow-auto')
 
     @ui.refreshable
     def chat_list_sidebar():
