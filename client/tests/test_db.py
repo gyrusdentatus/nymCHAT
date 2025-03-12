@@ -1,6 +1,6 @@
 import unittest
 import os
-from client.dbUtils import SQLiteManager  # Assuming the class is in a file named sqlite_manager.py
+from dbUtils import SQLiteManager  # Assuming the class is in a file named sqlite_manager.py
 
 class TestSQLiteManager(unittest.TestCase):
     def setUp(self):

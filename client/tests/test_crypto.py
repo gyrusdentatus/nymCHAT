@@ -1,6 +1,6 @@
 import unittest
 import os
-from client.cryptographyUtils import CryptoUtils
+from cryptographyUtils import CryptoUtils
 
 class TestCryptoUtils(unittest.TestCase):
     def setUp(self):

@@ -1,24 +1,27 @@
 import json
 import os
+from dotenv import load_dotenv
 
-def read_server_address():
-    try:
-        # Direct path to storage/config.txt
-        config_path = os.path.join('storage', 'config.txt')
+load_dotenv()
+
+# def read_server_address():
+#     try:
+#         # Direct path to storage/config.txt
+#         config_path = os.path.join('storage', 'config.txt')
         
-        with open(config_path, 'r') as file:
-            line = file.readline().strip()
-            if line.startswith("SERVER_ADDRESS="):
-                return line.split('=')[1].strip()
-            else:
-                raise ValueError("SERVER_ADDRESS not found in config file")
-    except FileNotFoundError:
-        raise FileNotFoundError("Config file not found.")
-    except Exception as e:
-        raise e
+#         with open(config_path, 'r') as file:
+#             line = file.readline().strip()
+#             if line.startswith("SERVER_ADDRESS="):
+#                 return line.split('=')[1].strip()
+#             else:
+#                 raise ValueError("SERVER_ADDRESS not found in config file")
+#     except FileNotFoundError:
+#         raise FileNotFoundError("Config file not found.")
+#     except Exception as e:
+#         raise e
 
 # Global variable for the server address
-SERVER_ADDRESS = read_server_address()
+SERVER_ADDRESS = os.getenv("SERVER_ADDRESS")
 
 class MixnetMessage:
     @staticmethod
