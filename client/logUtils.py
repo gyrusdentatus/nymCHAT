@@ -15,3 +15,4 @@ logging.basicConfig(
 
 logger = logging.getLogger("AppLogger")
 
+logging.getLogger("watchfiles").setLevel(logging.WARNING)
