@@ -348,132 +348,127 @@ class MessageHandler:
     # Handling Incoming Messages (SINGLE CALLBACK)
     # --------------------------------------------------------------------------
     async def handle_incoming_message(self, message):
+        """ Main dispatcher for handling messages """
         try:
             encapsulated_data = json.loads(message)
             action = encapsulated_data.get("action")
             context = encapsulated_data.get("context")
-            content = encapsulated_data.get("content")
+            content = self._parse_content(encapsulated_data.get("content"))
 
-            if isinstance(content, str):
-                try:
-                    content = json.loads(content)
-                except json.JSONDecodeError:
-                    pass
-
-            if action == "challenge":
-                if context == "registration":
-                    await self.handle_registration_challenge(content)
-                elif context == "login":
-                    await self.handle_login_challenge(content)
-                else:
-                    logger.warning(f"Unhandled challenge context: {context}")
-
-            elif action == "challengeResponse":
-                if context == "registration":
-                    await self.handle_registration_response(content)
-                elif context == "login":
-                    await self.handle_login_response(content)
-                else:
-                    logger.warning(f"Unhandled challengeResponse context: {context}")
-
-            elif action == "incomingMessage":
-                if isinstance(content, dict):
-                    from_user = content.get("sender")
-                    if isinstance(content.get("body"), dict):
-                        is_encrypted = True
-                    else:
-                        is_encrypted = content.get("encrypted", False)
-
-                    if is_encrypted:
-                        sender_pub_from_msg = content.get("senderPublicKey")
-                        if self.db_manager and not self.db_manager.get_contact(self.current_user["username"], from_user) and sender_pub_from_msg:
-                            self.db_manager.add_contact(self.current_user["username"], from_user, sender_pub_from_msg)
-                        contact = self.db_manager.get_contact(self.current_user["username"], from_user) if self.db_manager else None
-                        if contact:
-                            sender_public_key_pem = contact[1]
-                        else:
-                            sender_public_key_pem = sender_pub_from_msg
-                        if not sender_public_key_pem:
-                            logger.error(f"No sender public key available for {from_user}.")
-                            decrypted_msg = content.get("body")
-                        else:
-                            sender_public_key = serialization.load_pem_public_key(sender_public_key_pem.encode())
-                            recipient_private_key = self.crypto_utils.load_private_key(self.current_user["username"])
-                            try:
-                                decrypted_msg = self.crypto_utils.decrypt_message(content.get("body"), recipient_private_key, sender_public_key)
-                            except Exception as e:
-                                logger.error(f"Decryption failed: {e}")
-                                decrypted_msg = content.get("body")
-                    else:
-                        decrypted_msg = content.get("body")
-
-                    try:
-                        message_obj = json.loads(decrypted_msg)
-                    except Exception as e:
-                        message_obj = {"type": 0, "message": decrypted_msg}
-
-                    if message_obj.get("type") == 1:
-                        nym_addr = message_obj.get("message")
-                        if nym_addr:
-                            self.nym_addresses[from_user] = nym_addr
-                            logger.info(f"Received handshake from {from_user}. Updated nym address: {nym_addr}")
-                        else:
-                            logger.warning(f"Handshake message from {from_user} missing nym address.")
-                        return
-                    else:
-                        actual_message = message_obj.get("message")
-
-                    if from_user and actual_message and self.db_manager:
-                        self.db_manager.save_message(
-                            self.current_user["username"],
-                            from_user,
-                            'from',
-                            actual_message
-                        )
-                        logger.info(f"Stored incoming message from {from_user} in DB.")
-
-                        if self.chat_messages is not None:
-                            if from_user not in self.chat_messages:
-                                self.chat_messages[from_user] = []
-                            stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            self.chat_messages[from_user].append((from_user, actual_message, stamp))
-
-                            if not any(chat["id"] == from_user for chat in self.chat_list):
-                                self.chat_list.append({"id": from_user, "name": from_user})
-                                if self.chat_list_sidebar_fn:
-                                    self.chat_list_sidebar_fn.refresh()
-                                logger.info(f"Added {from_user} to chat list.")
-
-                            currently_active_chat = self._get_active_chat()
-                            if from_user == currently_active_chat:
-                                if self.render_chat_fn:
-                                    try:
-                                        self.render_chat_fn.refresh(
-                                            self.current_user["username"],
-                                            currently_active_chat,
-                                            self.chat_messages
-                                        )
-                                        logger.info("Chat UI refreshed successfully.")
-                                    except Exception as e:
-                                        logger.error(f"Failed to refresh chat UI: {e}")
-                            else:
-                                if self.new_message_callback:
-                                    self.new_message_callback(from_user, actual_message)
-                        else:
-                            logger.warning("chat_messages is None; UI might not be initialized.")
-                    else:
-                        logger.warning("Missing fields or DB manager not ready.")
-                else:
-                    logger.warning("'content' not a dict in 'incomingMessage' action.")
-
-            elif action == "queryResponse" and context == "query":
-                await self.handle_query_response(content)
-
-            elif action == "sendResponse" and context == "chat":
-                await self.handle_send_response(content)
-
+            handler = self.get_handler(action, context)
+            if handler:
+                await handler(content)
             else:
                 logger.warning(f"Unknown or unhandled action '{action}', context='{context}'")
-
         except json.JSONDecodeError:
             logger.error("Could not decode the message content.")
+
+    def _parse_content(self, content):
+        """ Ensure content is a dictionary, converting if necessary """
+        if isinstance(content, str):
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                pass
+        return content
+
+    def get_handler(self, action, context):
+        """ Returns the appropriate handler function based on action and context """
+        handlers = {
+            ("challenge", "registration"): self.handle_registration_challenge,
+            ("challenge", "login"): self.handle_login_challenge,
+            ("challengeResponse", "registration"): self.handle_registration_response,
+            ("challengeResponse", "login"): self.handle_login_response,
+            ("incomingMessage", None): self.handle_incoming_message_content,
+            ("queryResponse", "query"): self.handle_query_response,
+            ("sendResponse", "chat"): self.handle_send_response,
+        }
+        return handlers.get((action, context)) or handlers.get((action, None))
+
+    async def handle_incoming_message_content(self, content):
+        """ Handles incoming messages, including decryption and storage """
+        if not isinstance(content, dict):
+            logger.warning("'content' not a dict in 'incomingMessage' action.")
+            return
+
+        from_user = content.get("sender")
+        is_encrypted = isinstance(content.get("body"), dict) or content.get("encrypted", False)
+        decrypted_msg = self._decrypt_message(content, from_user) if is_encrypted else content.get("body")
+
+        message_obj = self._parse_message(decrypted_msg)
+        if message_obj.get("type") == 1:
+            self._handle_handshake(from_user, message_obj)
+            return
+
+        actual_message = message_obj.get("message")
+        if from_user and actual_message and self.db_manager:
+            self._store_message(from_user, actual_message)
+            self._update_chat_ui(from_user, actual_message)
+
+    def _decrypt_message(self, content, from_user):
+        """ Handles message decryption """
+        sender_pub_from_msg = content.get("senderPublicKey")
+        contact = self.db_manager.get_contact(self.current_user["username"], from_user) if self.db_manager else None
+        sender_public_key_pem = contact[1] if contact else sender_pub_from_msg
+
+        if not sender_public_key_pem:
+            logger.error(f"No sender public key available for {from_user}.")
+            return content.get("body")
+
+        sender_public_key = serialization.load_pem_public_key(sender_public_key_pem.encode())
+        recipient_private_key = self.crypto_utils.load_private_key(self.current_user["username"])
+        
+        try:
+            return self.crypto_utils.decrypt_message(content.get("body"), recipient_private_key, sender_public_key)
+        except Exception as e:
+            logger.error(f"Decryption failed: {e}")
+            return content.get("body")
+
+    def _parse_message(self, decrypted_msg):
+        """ Ensures the message content is in the correct format """
+        try:
+            return json.loads(decrypted_msg)
+        except json.JSONDecodeError:
+            return {"type": 0, "message": decrypted_msg}
+
+    def _handle_handshake(self, from_user, message_obj):
+        """ Handles handshake messages and updates contact list """
+        nym_addr = message_obj.get("message")
+        if nym_addr:
+            self.nym_addresses[from_user] = nym_addr
+            logger.info(f"Received handshake from {from_user}. Updated nym address: {nym_addr}")
+        else:
+            logger.warning(f"Handshake message from {from_user} missing nym address.")
+
+    def _store_message(self, from_user, actual_message):
+        """ Stores message in the database """
+        self.db_manager.save_message(self.current_user["username"], from_user, 'from', actual_message)
+        logger.info(f"Stored incoming message from {from_user} in DB.")
+
+    def _update_chat_ui(self, from_user, actual_message):
+        """ Updates chat messages and UI elements """
+        if self.chat_messages is None:
+            logger.warning("chat_messages is None; UI might not be initialized.")
+            return
+
+        if from_user not in self.chat_messages:
+            self.chat_messages[from_user] = []
+
+        stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.chat_messages[from_user].append((from_user, actual_message, stamp))
+
+        if not any(chat["id"] == from_user for chat in self.chat_list):
+            self.chat_list.append({"id": from_user, "name": from_user})
+            if self.chat_list_sidebar_fn:
+                self.chat_list_sidebar_fn.refresh()
+            logger.info(f"Added {from_user} to chat list.")
+
+        currently_active_chat = self._get_active_chat()
+        if from_user == currently_active_chat and self.render_chat_fn:
+            try:
+                self.render_chat_fn.refresh(self.current_user["username"], currently_active_chat, self.chat_messages)
+                logger.info("Chat UI refreshed successfully.")
+            except Exception as e:
+                logger.error(f"Failed to refresh chat UI: {e}")
+        elif self.new_message_callback:
+            self.new_message_callback(from_user, actual_message)
