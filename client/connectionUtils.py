@@ -1,6 +1,6 @@
 import json
 from async_ffi import PyMixnetClient
-from client.logUtils import logger
+from logUtils import logger
 
 class MixnetConnectionClient:
     def __init__(self):

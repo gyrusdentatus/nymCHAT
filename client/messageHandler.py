@@ -3,11 +3,11 @@ import asyncio
 from nicegui import ui
 from datetime import datetime
 from cryptography.hazmat.primitives import serialization
-from client.mixnetMessages import MixnetMessage
-from client.cryptographyUtils import CryptoUtils
-from client.connectionUtils import MixnetConnectionClient
-from client.dbUtils import SQLiteManager
-from client.logUtils import logger
+from mixnetMessages import MixnetMessage
+from cryptographyUtils import CryptoUtils
+from connectionUtils import MixnetConnectionClient
+from dbUtils import SQLiteManager
+from logUtils import logger
 
 class MessageHandler:
     def __init__(self, crypto_utils: CryptoUtils, connection_client: MixnetConnectionClient):

@@ -6,11 +6,11 @@ from nicegui import ui, app
 from uuid import uuid4
 from datetime import datetime
 
-from client.dbUtils import SQLiteManager
-from client.cryptographyUtils import CryptoUtils
-from client.connectionUtils import MixnetConnectionClient
-from client.messageHandler import MessageHandler
-from client.logUtils import logger
+from dbUtils import SQLiteManager
+from cryptographyUtils import CryptoUtils
+from connectionUtils import MixnetConnectionClient
+from messageHandler import MessageHandler
+from logUtils import logger
 
 ###############################################################################
 # GLOBAL / IN-MEMORY STATE
@@ -94,7 +94,6 @@ def scan_for_users():
         if os.path.isdir(os.path.join(DB_DIR, d))
     ]
     usernames = dirs
-    logger.info("Found local users:", usernames)
 
 def load_chats_from_db():
     """Load the chat_list and messages from DB for the current user."""
