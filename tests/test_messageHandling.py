@@ -151,11 +151,6 @@ class TestMessageHandler(unittest.TestCase):
         # Populate the database with test data
         self.db_manager.register_user(self.username, "public_key_testuser")
         self.db_manager.create_user_tables(self.username)
-        self.db_manager.add_contact(self.username, "alice", "public_key_alice")
-        self.db_manager.add_contact(self.username, "bob", "public_key_bob")
-        self.db_manager.save_message(self.username, "alice", "to", "Hello Alice!")
-        self.db_manager.save_message(self.username, "bob", "from", "Hello Bob!")
-
         self.mock_server = MockServer()
         self.message_handler = MessageHandler(
             crypto_utils=self.crypto_utils,
