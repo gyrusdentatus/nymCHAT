@@ -1,5 +1,6 @@
 import json
 from async_ffi import PyMixnetClient
+from client.logUtils import logger
 
 class MixnetConnectionClient:
     def __init__(self):
@@ -38,7 +39,7 @@ class MixnetConnectionClient:
         """
         Start receiving messages from the Mixnet.
         """
-        print("[DEBUG] Starting Mixnet message receiver loop...")
+        logger.info("STARTED MESSAGE RECEIVING LOOP")
         await self.client.receive_messages()  # Ensure this is awaited properly
 
     async def shutdown(self):

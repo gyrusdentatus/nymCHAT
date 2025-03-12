@@ -7,6 +7,7 @@ from client.mixnetMessages import MixnetMessage
 from client.cryptographyUtils import CryptoUtils
 from client.connectionUtils import MixnetConnectionClient
 from client.dbUtils import SQLiteManager
+from client.logUtils import logger
 
 class MessageHandler:
     def __init__(self, crypto_utils: CryptoUtils, connection_client: MixnetConnectionClient):
@@ -46,7 +47,7 @@ class MessageHandler:
     def update_nym_address(self, nym_address):
         """Update the client's own nym address in MessageHandler."""
         self.nym_address = nym_address
-        print(f"[INFO] Updated own nym address in MessageHandler: {nym_address}")
+        logger.info(f"Updated own nym address in MessageHandler: {nym_address}")
 
     def set_ui_state(self, messages, chat_list, get_active_chat, render_chat, chat_container, chat_list_sidebar_fn=None):
         """
@@ -73,17 +74,17 @@ class MessageHandler:
             private_key, public_key = self.crypto_utils.generate_key_pair(username)
             self.temporary_keys["private_key"] = private_key
             self.temporary_keys["public_key"] = public_key
-            print(f"[INFO] Keypair generated for user: {username}")
+            logger.info(f"Keypair generated for user: {username}")
 
             # Send a 'register' message (only username and public key are used)
             register_msg = MixnetMessage.register(usernym=username, publicKey=public_key)
             await self.connection_client.send_message(register_msg)
-            print("[INFO] Registration message sent; waiting for challenge...")
+            logger.info("Registration message sent; waiting for challenge...")
 
             await self.registration_complete.wait()
 
         except Exception as e:
-            print(f"[ERROR] Registration error: {e}")
+            logger.error(f"Registration error: {e}")
 
     async def login_user(self, username):
         try:
@@ -92,81 +93,81 @@ class MessageHandler:
 
             private_key = self.crypto_utils.load_private_key(username)
             if not private_key:
-                print(f"[ERROR] No private key for {username}")
+                logger.error(f"No private key for {username}")
                 return
 
             self.temporary_keys["private_key"] = private_key
-            print(f"[INFO] Loaded private key for {username}")
+            logger.info(f"Loaded private key for {username}")
 
             msg = MixnetMessage.login(username)
             await self.connection_client.send_message(msg)
-            print("[INFO] Login message sent; waiting for challenge...")
+            logger.info("Login message sent; waiting for challenge...")
 
             await self.login_complete.wait()
 
         except Exception as e:
-            print(f"[ERROR] Login error: {e}")
+            logger.error(f"Login error: {e}")
 
     async def handle_registration_challenge(self, content):
         nonce = content.get("nonce")
         if not nonce:
-            print("[ERROR] No nonce in registration challenge.")
+            logger.error("No nonce in registration challenge.")
             return
         private_key = self.temporary_keys.get("private_key")
         if not private_key:
-            print("[ERROR] No private key for registration.")
+            logger.error("No private key for registration.")
             return
 
         try:
             signature = self.crypto_utils.sign_message(private_key, nonce)
             resp = MixnetMessage.registrationResponse(self.current_user["username"], signature)
             await self.connection_client.send_message(resp)
-            print("[INFO] Registration challenge response sent.")
+            logger.info("Registration challenge response sent.")
         except Exception as e:
-            print(f"[ERROR] Signing registration nonce: {e}")
+            logger.error(f"Signing registration nonce: {e}")
 
     async def handle_login_challenge(self, content):
         nonce = content.get("nonce")
         if not nonce:
-            print("[ERROR] No nonce in login challenge.")
+            logger.error("No nonce in login challenge.")
             return
         private_key = self.temporary_keys.get("private_key")
         if not private_key:
-            print("[ERROR] No private key for login.")
+            logger.error("No private key for login.")
             return
 
         try:
             signature = self.crypto_utils.sign_message(private_key, nonce)
             resp = MixnetMessage.loginResponse(self.current_user["username"], signature)
             await self.connection_client.send_message(resp)
-            print("[INFO] Login challenge response sent.")
+            logger.info("Login challenge response sent.")
         except Exception as e:
-            print(f"[ERROR] Signing login nonce: {e}")
+            logger.error(f"Signing login nonce: {e}")
 
     async def handle_registration_response(self, content):
         """
         Handles the response after the registration challenge has been completed.
         """
         if content == "success":
-            print("[INFO] Registration successful!")
+            logger.info("Registration successful!")
             username = self.current_user["username"]
             priv_k = self.temporary_keys["private_key"]
             pub_k = self.temporary_keys["public_key"]
 
             try:
                 self.crypto_utils.save_keys(username, priv_k, pub_k)
-                print("[INFO] Keys saved.")
+                logger.info("Keys saved.")
             except Exception as e:
-                print(f"[ERROR] Saving keys: {e}")
+                logger.error(f"Saving keys: {e}")
                 self.registration_successful = False
                 self.registration_complete.set()  # Ensure the event is set
                 return
 
             try:
                 self.db_manager = SQLiteManager(username)
-                print("[INFO] DB initialized for user:", username)
+                logger.info("DB initialized for user:", username)
             except Exception as e:
-                print(f"[ERROR] DB init: {e}")
+                logger.error(f"DB init: {e}")
                 self.registration_successful = False
                 self.registration_complete.set()  # Ensure the event is set
                 return
@@ -175,7 +176,7 @@ class MessageHandler:
             self.registration_complete.set()  # Signal that registration is complete
 
         else:
-            print(f"[ERROR] Registration failed: {content}")
+            logger.error(f"Registration failed: {content}")
             self.registration_successful = False
             self.registration_complete.set()
 
@@ -184,14 +185,14 @@ class MessageHandler:
         Handles the response after the login challenge has been completed.
         """
         if content == "success":
-            print("[INFO] Login successful!")
+            logger.info("Login successful!")
             username = self.current_user["username"]
             try:
                 self.db_manager = SQLiteManager(username)
-                print("[INFO] DB manager created.")
+                logger.info("DB manager created.")
                 self.db_manager.create_user_tables(username)
             except Exception as e:
-                print(f"[ERROR] DB init: {e}")
+                logger.error(f"DB init: {e}")
                 self.login_successful = False
                 self.login_complete.set()
                 return
@@ -200,7 +201,7 @@ class MessageHandler:
             self.login_complete.set()
 
         else:
-            print(f"[ERROR] Login failed: {content}")
+            logger.error(f"Login failed: {content}")
             self.login_successful = False
             self.login_complete.set()
 
@@ -213,16 +214,16 @@ class MessageHandler:
 
         sender_private_key = self.crypto_utils.load_private_key(self.current_user["username"])
         if not sender_private_key:
-            print("[ERROR] No private key to send message.")
+            logger.error("No private key to send message.")
             return
 
         if not self.db_manager:
-            print("[ERROR] DB manager not initialized.")
+            logger.error("DB manager not initialized.")
             return
 
         contact = self.db_manager.get_contact(self.current_user["username"], recipient_username)
         if not contact:
-            print(f"[ERROR] No contact record found for {recipient_username}. Cannot send message.")
+            logger.error(f"No contact record found for {recipient_username}. Cannot send message.")
             return
 
         existing_msgs = self.db_manager.get_messages_by_contact(self.current_user["username"], recipient_username)
@@ -257,7 +258,7 @@ class MessageHandler:
         else:
             msg = MixnetMessage.send(content=payload_str, signature=signature)
         await self.connection_client.send_message(msg)
-        print(f"[INFO] Sent direct message to {recipient_username}")
+        logger.info(f"Sent direct message to {recipient_username}")
 
         self.db_manager.save_message(
             self.current_user["username"],
@@ -271,21 +272,21 @@ class MessageHandler:
         Sends a handshake (type 1 message) containing this client's nym address.
         """
         if self.nym_address is None:
-            print("[ERROR] Nym address not set in MessageHandler.")
+            logger.error("Nym address not set in MessageHandler.")
             return
 
         sender_private_key = self.crypto_utils.load_private_key(self.current_user["username"])
         if not sender_private_key:
-            print("[ERROR] No private key available for handshake.")
+            logger.error("No private key available for handshake.")
             return
 
         if not self.db_manager:
-            print("[ERROR] DB manager not initialized.")
+            logger.error("DB manager not initialized.")
             return
 
         contact = self.db_manager.get_contact(self.current_user["username"], recipient_username)
         if not contact:
-            print(f"[ERROR] No contact record found for {recipient_username}. Cannot send handshake.")
+            logger.error(f"No contact record found for {recipient_username}. Cannot send handshake.")
             return
 
         recipient_public_key_pem = contact[1]
@@ -310,7 +311,7 @@ class MessageHandler:
             msg = MixnetMessage.send(content=payload_str, signature=signature)
         await self.connection_client.send_message(msg)
 
-        print(f"[INFO] Sent handshake (nym address) to {recipient_username}")
+        logger.info(f"Sent handshake (nym address) to {recipient_username}")
 
     async def handle_send_response(self, content):
         pass
@@ -325,18 +326,18 @@ class MessageHandler:
 
             msg = MixnetMessage.query(target_username)
             await self.connection_client.send_message(msg)
-            print(f"[INFO] Sent query for user: {target_username}")
+            logger.info(f"Sent query for user: {target_username}")
 
             await self.query_result_event.wait()
             return self.query_result
         except Exception as e:
-            print(f"[ERROR] query_user: {e}")
+            logger.error(f"query_user: {e}")
             return None
 
     async def handle_query_response(self, content):
         self.query_result = content
         self.query_result_event.set()
-        print(f"[INFO] queryResponse: {content}")
+        logger.info(f"queryResponse: {content}")
         if self.db_manager and isinstance(content, dict):
             username = content.get("username")
             public_key = content.get("publicKey")
@@ -365,7 +366,7 @@ class MessageHandler:
                 elif context == "login":
                     await self.handle_login_challenge(content)
                 else:
-                    print(f"[WARNING] Unhandled challenge context: {context}")
+                    logger.warning(f"Unhandled challenge context: {context}")
 
             elif action == "challengeResponse":
                 if context == "registration":
@@ -373,7 +374,7 @@ class MessageHandler:
                 elif context == "login":
                     await self.handle_login_response(content)
                 else:
-                    print(f"[WARNING] Unhandled challengeResponse context: {context}")
+                    logger.warning(f"Unhandled challengeResponse context: {context}")
 
             elif action == "incomingMessage":
                 if isinstance(content, dict):
@@ -393,7 +394,7 @@ class MessageHandler:
                         else:
                             sender_public_key_pem = sender_pub_from_msg
                         if not sender_public_key_pem:
-                            print(f"[ERROR] No sender public key available for {from_user}.")
+                            logger.error(f"No sender public key available for {from_user}.")
                             decrypted_msg = content.get("body")
                         else:
                             sender_public_key = serialization.load_pem_public_key(sender_public_key_pem.encode())
@@ -401,7 +402,7 @@ class MessageHandler:
                             try:
                                 decrypted_msg = self.crypto_utils.decrypt_message(content.get("body"), recipient_private_key, sender_public_key)
                             except Exception as e:
-                                print(f"[ERROR] Decryption failed: {e}")
+                                logger.error(f"Decryption failed: {e}")
                                 decrypted_msg = content.get("body")
                     else:
                         decrypted_msg = content.get("body")
@@ -415,9 +416,9 @@ class MessageHandler:
                         nym_addr = message_obj.get("message")
                         if nym_addr:
                             self.nym_addresses[from_user] = nym_addr
-                            print(f"[INFO] Received handshake from {from_user}. Updated nym address: {nym_addr}")
+                            logger.info(f"Received handshake from {from_user}. Updated nym address: {nym_addr}")
                         else:
-                            print(f"[WARNING] Handshake message from {from_user} missing nym address.")
+                            logger.warning(f"Handshake message from {from_user} missing nym address.")
                         return
                     else:
                         actual_message = message_obj.get("message")
@@ -429,7 +430,7 @@ class MessageHandler:
                             'from',
                             actual_message
                         )
-                        print(f"[INFO] Stored incoming message from {from_user} in DB.")
+                        logger.info(f"Stored incoming message from {from_user} in DB.")
 
                         if self.chat_messages is not None:
                             if from_user not in self.chat_messages:
@@ -441,7 +442,7 @@ class MessageHandler:
                                 self.chat_list.append({"id": from_user, "name": from_user})
                                 if self.chat_list_sidebar_fn:
                                     self.chat_list_sidebar_fn.refresh()
-                                print(f"[INFO] Added {from_user} to chat list.")
+                                logger.info(f"Added {from_user} to chat list.")
 
                             currently_active_chat = self._get_active_chat()
                             if from_user == currently_active_chat:
@@ -452,18 +453,18 @@ class MessageHandler:
                                             currently_active_chat,
                                             self.chat_messages
                                         )
-                                        print("[INFO] Chat UI refreshed successfully.")
+                                        logger.info("Chat UI refreshed successfully.")
                                     except Exception as e:
-                                        print(f"[ERROR] Failed to refresh chat UI: {e}")
+                                        logger.error(f"Failed to refresh chat UI: {e}")
                             else:
                                 if self.new_message_callback:
                                     self.new_message_callback(from_user, actual_message)
                         else:
-                            print("[WARNING] chat_messages is None; UI might not be initialized.")
+                            logger.warning("chat_messages is None; UI might not be initialized.")
                     else:
-                        print("[WARNING] Missing fields or DB manager not ready.")
+                        logger.warning("Missing fields or DB manager not ready.")
                 else:
-                    print("[WARNING] 'content' not a dict in 'incomingMessage' action.")
+                    logger.warning("'content' not a dict in 'incomingMessage' action.")
 
             elif action == "queryResponse" and context == "query":
                 await self.handle_query_response(content)
@@ -472,7 +473,7 @@ class MessageHandler:
                 await self.handle_send_response(content)
 
             else:
-                print(f"[WARNING] Unknown or unhandled action '{action}', context='{context}'")
+                logger.warning(f"Unknown or unhandled action '{action}', context='{context}'")
 
         except json.JSONDecodeError:
-            print("[ERROR] Could not decode the message content.")
+            logger.error("Could not decode the message content.")

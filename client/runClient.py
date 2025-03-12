@@ -6,10 +6,11 @@ from nicegui import ui, app
 from uuid import uuid4
 from datetime import datetime
 
-from dbUtils import SQLiteManager
-from cryptographyUtils import CryptoUtils
-from connectionUtils import MixnetConnectionClient
-from messageHandler import MessageHandler
+from client.dbUtils import SQLiteManager
+from client.cryptographyUtils import CryptoUtils
+from client.connectionUtils import MixnetConnectionClient
+from client.messageHandler import MessageHandler
+from client.logUtils import logger
 
 ###############################################################################
 # GLOBAL / IN-MEMORY STATE
@@ -85,7 +86,7 @@ def scan_for_users():
     global usernames
     if not os.path.exists(DB_DIR):
         os.makedirs(DB_DIR)
-        print("[INFO] Created 'storage' directory for user data.")
+        logger.info("Created 'storage' directory for user data.")
         return
 
     dirs = [
@@ -93,7 +94,7 @@ def scan_for_users():
         if os.path.isdir(os.path.join(DB_DIR, d))
     ]
     usernames = dirs
-    print("[INFO] Found local users:", usernames)
+    logger.info("Found local users:", usernames)
 
 def load_chats_from_db():
     """Load the chat_list and messages from DB for the current user."""
@@ -103,7 +104,7 @@ def load_chats_from_db():
 
     active_username = message_handler.current_user["username"]
     if not message_handler.db_manager:
-        print("[WARNING] DB manager not found; maybe not logged in yet.")
+        logger.warning("DB manager not found; maybe not logged in yet.")
         return
 
     rows = message_handler.db_manager.conn.execute(
@@ -128,26 +129,26 @@ def load_chats_from_db():
 
         messages[contact_username] = msg_list
 
-    print("[INFO] Chat list and messages loaded from DB.")
+    logger.info("Chat list and messages loaded from DB.")
 
 async def connect_mixnet():
     global global_nym_address
-    print("[INFO] Initializing Mixnet client...")
+    logger.info("Initializing Mixnet client...")
     await connection_client.init()
-    print("[INFO] Mixnet client initialized.")
+    logger.info("Mixnet client initialized.")
     nym_address = await connection_client.get_nym_address()
     global_nym_address = nym_address
     # Update MessageHandler with our nym address
     message_handler.update_nym_address(nym_address)
-    print(f"[INFO] My Nym Address: {nym_address}")
+    logger.info(f"My Nym Address: {nym_address}")
     main_loop = asyncio.get_running_loop()
     def message_callback(msg):
-        print(f"[DEBUG] Received raw message from server: {msg}")
+        logger.debug(f"Received raw message from server: {msg}")
         asyncio.run_coroutine_threadsafe(message_handler.handle_incoming_message(msg), main_loop)
     await connection_client.set_message_callback(message_callback)
-    print("[INFO] Message callback set.")
+    logger.info("Message callback set.")
     asyncio.create_task(connection_client.receive_messages())
-    print("[INFO] Started message receiving loop.")
+    logger.info("Started message receiving loop.")
     ui.navigate.to("/welcome")  # Redirect to welcome page
 
 ###############################################################################
@@ -409,10 +410,10 @@ def shutdown_client():
 @app.on_shutdown
 def on_shutdown():
     if connection_client.client is not None:
-        print("[INFO] Shutting down Mixnet client...")
+        logger.info("Shutting down Mixnet client...")
         t = threading.Thread(target=shutdown_client)
         t.start()
         t.join()  # Wait for shutdown to complete
-        print("[INFO] Mixnet client shutdown complete.")
+        logger.info("Mixnet client shutdown complete.")
         
 ui.run(dark=True, host='127.0.0.1', title="NymCHAT")
