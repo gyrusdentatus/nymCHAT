@@ -4,11 +4,11 @@ import os
 import secrets
 import asyncio
 import logging
-from client.messageHandler import MessageHandler
-from client.cryptographyUtils import CryptoUtils
-from client.dbUtils import SQLiteManager
-from client.connectionUtils import MixnetConnectionClient
-from client.mixnetMessages import MixnetMessage
+from messageHandler import MessageHandler
+from cryptographyUtils import CryptoUtils
+from dbUtils import SQLiteManager
+from connectionUtils import MixnetConnectionClient
+from mixnetMessages import MixnetMessage
 
 class MockServer:
     def __init__(self):
