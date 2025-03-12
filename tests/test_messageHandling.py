@@ -3,6 +3,7 @@ import json
 import os
 import secrets
 import asyncio
+import logging
 from client.messageHandler import MessageHandler
 from client.cryptographyUtils import CryptoUtils
 from client.dbUtils import SQLiteManager
@@ -142,6 +143,10 @@ class MockServer:
 class TestMessageHandler(unittest.TestCase):
     def setUp(self):
         """Setup real dependencies and mock the server."""
+
+        self.logger = logging.getLogger("AppLogger")  # Match the logger name used in the app
+        self.logger.setLevel(logging.CRITICAL)  # Suppress all logs except critical
+
         self.username = "testuser"
         self.storage_dir = "test_storage"
         self.crypto_utils = CryptoUtils()
@@ -151,17 +156,33 @@ class TestMessageHandler(unittest.TestCase):
         # Populate the database with test data
         self.db_manager.register_user(self.username, "public_key_testuser")
         self.db_manager.create_user_tables(self.username)
+        self.db_manager.add_contact(self.username, "alice", "public_key_alice")
+        self.db_manager.add_contact(self.username, "bob", "public_key_bob")
+        self.db_manager.save_message(self.username, "alice", "to", "Hello Alice!")
+        self.db_manager.save_message(self.username, "bob", "from", "Hello Bob!")
+
         self.mock_server = MockServer()
         self.message_handler = MessageHandler(
             crypto_utils=self.crypto_utils,
             connection_client=self.connection_client
         )
-        
+
         # Set the active user
         self.message_handler.current_user["username"] = self.username
         self.message_handler.db_manager = self.db_manager  # Ensure DB is set
 
+        self.message_handler.set_ui_state(
+            messages={},  # Empty dictionary to prevent 'None' errors
+            chat_list=[],
+            get_active_chat=lambda: None,  # Placeholder function
+            render_chat=lambda u, c, m: None,  # Placeholder function
+            chat_container=None,
+            chat_list_sidebar_fn=None
+        )
+
+
     def tearDown(self):
+        self.logger.setLevel(logging.NOTSET)
         self.db_manager.close()
         db_path = os.path.join(self.storage_dir, self.username, f"{self.username}_client.db")
         if os.path.exists(db_path):
@@ -224,14 +245,14 @@ class TestMessageHandler(unittest.TestCase):
 
     async def async_test_handle_incoming_message(self):
         sender = "friend"
-        recipient = "testuser"
+        current_user = "testuser"
         message_content = "Hello!"
         self.mock_server.users[sender] = "mock_public_key"
         incoming_message = json.dumps({"action": "incomingMessage", "context": "chat", "content": {"sender": sender, "body": message_content, "encrypted": False}})
         await self.message_handler.handle_incoming_message(incoming_message)
-        messages = self.db_manager.get_messages_by_contact(recipient, sender)
+        chat_messages = self.db_manager.get_messages_by_contact(current_user, sender)
         # print(f"[TEST] Messages retrieved: {messages}")
-        self.assertGreater(len(messages), 0)
+        self.assertGreater(len(chat_messages), 0)
 
 if __name__ == "__main__":
     unittest.main()
