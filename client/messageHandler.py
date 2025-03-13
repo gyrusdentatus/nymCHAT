@@ -313,13 +313,18 @@ class MessageHandler:
         # inner message format
         handshake_payload = json.dumps({"type": 1, "message": self.nym_address})
 
-        # Encrypt 
+        # Encrypt and sign
         enc_result = self.crypto_utils.encrypt_message(recipient_public_key_pem, handshake_payload)
+        encrypted_payload_str = json.dumps(enc_result)
+        payload_signature = self.crypto_utils.sign_message(sender_private_key, encrypted_payload_str)
 
         payload = {
             "sender": self.current_user["username"],
             "recipient": recipient_username,
-            "body": enc_result,
+            "body": {
+                "encryptedPayload": enc_result,
+                "payloadSignature": payload_signature
+            },
             "encrypted": True
         }
 
@@ -486,21 +491,25 @@ class MessageHandler:
             logger.error(f"Decryption failed: {e}")
             return None
 
-        # Step 4: Ensure the message is in the correct format
+        # Step 4: Parse JSON 
         try:
             message_obj = json.loads(decrypted_message)
         except json.JSONDecodeError:
-            message_obj = {"type": 0, "message": decrypted_message}
-
+            logger.error("Decrypted message not valid JSON")
+            return None
+        
+        # Step 5 Check type 
+        message_type = message_obj.get("type")
         actual_message = message_obj.get("message")
 
+        if message_type == 1:
+            logger.info(f"Storing handshake nym_address from {from_user}")
+            self.nym_addresses[from_user] = actual_message
+            return
+
+        # Step 6 Handle normal message storage
         if from_user and actual_message and self.db_manager:
-            self.db_manager.save_message(
-                self.current_user["username"],
-                from_user,
-                'from',
-                actual_message
-            )
+            self._store_message(from_user, actual_message)
             logger.info(f"Stored incoming message from {from_user} in DB.")
 
             # Update the chat UI
@@ -561,19 +570,17 @@ class MessageHandler:
             if isinstance(parsed_message, dict):
                 return parsed_message
         except json.JSONDecodeError:
-            pass  # If parsing fails, assume it's plain text
+            logger.error(" _parse_message: Decrypted message is not valid JSON")
+            return None
 
-        return {"type": 0, "message": decrypted_msg}  # Wrap plaintext in expected format
-
-
-    def _handle_handshake(self, from_user, message_obj):
-        """ Handles handshake messages and updates contact list """
-        nym_addr = message_obj.get("message")
-        if nym_addr:
-            self.nym_addresses[from_user] = nym_addr
-            logger.info(f"Received handshake from {from_user}. Updated nym address: {nym_addr}")
-        else:
-            logger.warning(f"Handshake message from {from_user} missing nym address.")
+    # def _handle_handshake(self, from_user, message_obj):
+    #     """ Handles handshake messages and updates contact list """
+    #     nym_addr = message_obj.get("message")
+    #     if nym_addr:
+    #         self.nym_addresses[from_user] = nym_addr
+    #         logger.info(f"Received handshake from {from_user}. Updated nym address: {nym_addr}")
+    #     else:
+    #         logger.warning(f"Handshake message from {from_user} missing nym address.")
 
     def _store_message(self, from_user, actual_message):
         """ Stores message in the database """
