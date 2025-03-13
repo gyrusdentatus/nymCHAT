@@ -3,7 +3,7 @@ import json
 import os
 import secrets
 import asyncio
-import logging
+from cryptography.hazmat.primitives import serialization
 from messageHandler import MessageHandler
 from cryptographyUtils import CryptoUtils
 from dbUtils import SQLiteManager
@@ -144,22 +144,32 @@ class TestMessageHandler(unittest.TestCase):
     def setUp(self):
         """Setup real dependencies and mock the server."""
 
-        self.logger = logging.getLogger("AppLogger")  # Match the logger name used in the app
-        self.logger.setLevel(logging.CRITICAL)  # Suppress all logs except critical
+        # self.logger = logging.getLogger("AppLogger")
+        # self.logger.setLevel(logging.CRITICAL)  # Suppress logs except critical
 
         self.username = "testuser"
+        self.friend_username = "friend"  # ✅ Add friend user
         self.storage_dir = "test_storage"
         self.crypto_utils = CryptoUtils()
         self.connection_client = MixnetConnectionClient()
         self.db_manager = SQLiteManager(self.username, self.storage_dir)
 
+        # ✅ Generate keys for testuser
+        self.private_key, self.public_key_pem = self.crypto_utils.generate_key_pair(self.username)
+        self.crypto_utils.save_keys(self.username, self.private_key, self.public_key_pem)
+
+        # ✅ Generate keys for friend (sender)
+        self.friend_private_key, self.friend_public_key_pem = self.crypto_utils.generate_key_pair(self.friend_username)
+        self.crypto_utils.save_keys(self.friend_username, self.friend_private_key, self.friend_public_key_pem)
+
         # Populate the database with test data
-        self.db_manager.register_user(self.username, "public_key_testuser")
+        self.db_manager.register_user(self.username, self.public_key_pem)
         self.db_manager.create_user_tables(self.username)
         self.db_manager.add_contact(self.username, "alice", "public_key_alice")
         self.db_manager.add_contact(self.username, "bob", "public_key_bob")
-        self.db_manager.save_message(self.username, "alice", "to", "Hello Alice!")
-        self.db_manager.save_message(self.username, "bob", "from", "Hello Bob!")
+        self.db_manager.add_contact(self.username, self.friend_username, self.friend_public_key_pem)  # ✅ Ensure friend is a contact
+        # self.db_manager.save_message(self.username, "alice", "to", "Hello Alice!")
+        # self.db_manager.save_message(self.username, "bob", "from", "Hello Bob!")
 
         self.mock_server = MockServer()
         self.message_handler = MessageHandler(
@@ -174,15 +184,15 @@ class TestMessageHandler(unittest.TestCase):
         self.message_handler.set_ui_state(
             messages={},  # Empty dictionary to prevent 'None' errors
             chat_list=[],
-            get_active_chat=lambda: None,  # Placeholder function
-            render_chat=lambda u, c, m: None,  # Placeholder function
+            get_active_chat=lambda: None,
+            render_chat=lambda u, c, m: None,
             chat_container=None,
             chat_list_sidebar_fn=None
         )
 
 
     def tearDown(self):
-        self.logger.setLevel(logging.NOTSET)
+        # self.logger.setLevel(logging.NOTSET)
         self.db_manager.close()
         db_path = os.path.join(self.storage_dir, self.username, f"{self.username}_client.db")
         if os.path.exists(db_path):
@@ -236,6 +246,7 @@ class TestMessageHandler(unittest.TestCase):
         self.mock_server.users[recipient] = "mock_public_key"
         send_msg = MixnetMessage.send(json.dumps({"sender": sender, "recipient": recipient, "body": "Hello"}), "valid_signature")
         send_msg_json = json.dumps(send_msg)
+        # print(send_msg)
         server_response = await self.mock_server.handle_message(send_msg_json)
         # print(f"[TEST] Send response: {server_response}")
         self.assertIn("success", server_response)
@@ -244,15 +255,58 @@ class TestMessageHandler(unittest.TestCase):
         asyncio.run(self.async_test_handle_incoming_message())
 
     async def async_test_handle_incoming_message(self):
-        sender = "friend"
-        current_user = "testuser"
+        sender = self.friend_username
+        recipient = self.username
         message_content = "Hello!"
-        self.mock_server.users[sender] = "mock_public_key"
-        incoming_message = json.dumps({"action": "incomingMessage", "context": "chat", "content": {"sender": sender, "body": message_content, "encrypted": False}})
+
+        # ✅ Ensure message format matches original encapsulation
+        wrapped_message = json.dumps({"type": 0, "message": message_content})
+
+        # ✅ Encrypt message using ECDH + AES-GCM
+        encrypted_payload = self.crypto_utils.encrypt_message(
+            self.public_key_pem, wrapped_message
+        )
+
+        # ✅ Sign the encrypted payload separately
+        sender_private_key = self.crypto_utils.load_private_key(sender)
+        encrypted_payload_str = json.dumps(encrypted_payload)  # Convert dict to string for signing
+        payload_signature = self.crypto_utils.sign_message(sender_private_key, encrypted_payload_str)
+
+        # ✅ Construct payload to match updated format
+        payload = {
+            "sender": sender,
+            "recipient": recipient,
+            "body": {
+                "encryptedPayload": encrypted_payload,
+                "payloadSignature": payload_signature
+            },
+            "encrypted": True
+        }
+
+        # ✅ Sign the full payload (outer signature)
+        payload_str = json.dumps(payload)
+        outer_signature = self.crypto_utils.sign_message(sender_private_key, payload_str)
+
+        # ✅ Construct final incoming message
+        incoming_message = json.dumps({
+            "action": "incomingMessage",
+            "context": "chat",
+            "content": payload,
+            "signature": outer_signature
+        })
+
+        # print(f"simulating incoming message: {incoming_message}")
+
+        # ✅ Process the incoming message
         await self.message_handler.handle_incoming_message(incoming_message)
-        chat_messages = self.db_manager.get_messages_by_contact(current_user, sender)
-        # print(f"[TEST] Messages retrieved: {messages}")
+
+        # ✅ Allow time for async processing
+        await asyncio.sleep(0.5)
+
+        # ✅ Verify that message was stored
+        chat_messages = self.db_manager.get_messages_by_contact(recipient, sender)
         self.assertGreater(len(chat_messages), 0)
 
+        
 if __name__ == "__main__":
     unittest.main()

@@ -165,7 +165,7 @@ class MessageHandler:
 
             try:
                 self.db_manager = SQLiteManager(username)
-                logger.info("DB initialized for user:", username)
+                logger.info("DB initialized for user: %s", username)
             except Exception as e:
                 logger.error(f"DB init: {e}")
                 self.registration_successful = False
@@ -230,17 +230,32 @@ class MessageHandler:
         initial_message = not existing_msgs
 
         recipient_public_key_pem = contact[1]
-        recipient_public_key = serialization.load_pem_public_key(recipient_public_key_pem.encode())
 
+        # Maintain original message format
         wrapped_message = json.dumps({"type": 0, "message": message_content})
-        enc_result = self.crypto_utils.encrypt_message(wrapped_message, sender_private_key, recipient_public_key)
 
+        # Encrypt using ECDH + AES-GCM
+        encrypted_payload = self.crypto_utils.encrypt_message(recipient_public_key_pem, wrapped_message)
+
+        # Sign only the encryptedPayload
+        encrypted_payload_str = json.dumps(encrypted_payload)  # Convert to string for signing
+        payload_signature = self.crypto_utils.sign_message(sender_private_key, encrypted_payload_str)
+
+        # Construct the body field (ENCAPSULATING SIGNATURE INSIDE `body`)
+        body = {
+            "encryptedPayload": encrypted_payload,  
+            "payloadSignature": payload_signature  # Inner signature inside `body`
+        }
+
+        # Construct final message payload
         payload = {
             "sender": self.current_user["username"],
             "recipient": recipient_username,
-            "body": enc_result,
+            "body": body,  #  contains both encryptedPayload + signature
             "encrypted": True
         }
+
+        # If it's an initial message, include sender's public key
         if initial_message:
             sender_public_key_obj = self.crypto_utils.load_public_key(self.current_user["username"])
             sender_public_key_pem = sender_public_key_obj.public_bytes(
@@ -249,14 +264,17 @@ class MessageHandler:
             ).decode()
             payload["senderPublicKey"] = sender_public_key_pem
 
+        # Sign the full message (for the server)
         payload_str = json.dumps(payload)
-        signature = self.crypto_utils.sign_message(sender_private_key, payload_str)
-        # If a p2p nym address exists for this recipient, encapsulate as a directMessage.
+        outer_signature = self.crypto_utils.sign_message(sender_private_key, payload_str)
+
+        # Encapsulate as per existing protocol
         if recipient_username in self.nym_addresses:
-            msg = MixnetMessage.directMessage(content=payload_str, signature=signature)
+            msg = MixnetMessage.directMessage(content=payload_str, signature=outer_signature)
             msg["recipient"] = self.nym_addresses[recipient_username]
         else:
-            msg = MixnetMessage.send(content=payload_str, signature=signature)
+            msg = MixnetMessage.send(content=payload_str, signature=outer_signature)
+
         await self.connection_client.send_message(msg)
         logger.info(f"Sent direct message to {recipient_username}")
 
@@ -266,6 +284,7 @@ class MessageHandler:
             msg_type='to',
             message=message_content
         )
+
 
     async def send_handshake(self, recipient_username):
         """
@@ -290,10 +309,12 @@ class MessageHandler:
             return
 
         recipient_public_key_pem = contact[1]
-        recipient_public_key = serialization.load_pem_public_key(recipient_public_key_pem.encode())
 
+        # inner message format
         handshake_payload = json.dumps({"type": 1, "message": self.nym_address})
-        enc_result = self.crypto_utils.encrypt_message(handshake_payload, sender_private_key, recipient_public_key)
+
+        # Encrypt 
+        enc_result = self.crypto_utils.encrypt_message(recipient_public_key_pem, handshake_payload)
 
         payload = {
             "sender": self.current_user["username"],
@@ -301,17 +322,20 @@ class MessageHandler:
             "body": enc_result,
             "encrypted": True
         }
+
+        # Sign the entire payload (for server to verify)
         payload_str = json.dumps(payload)
         signature = self.crypto_utils.sign_message(sender_private_key, payload_str)
 
+        # If we have an ephemeral nym_address for a given user, format as directMessage & send to nym_address, else normal send to server
         if recipient_username in self.nym_addresses:
             msg = MixnetMessage.directMessage(content=payload_str, signature=signature)
             msg["recipient"] = self.nym_addresses[recipient_username]
         else:
             msg = MixnetMessage.send(content=payload_str, signature=signature)
-        await self.connection_client.send_message(msg)
 
-        logger.info(f"Sent handshake (nym address) to {recipient_username}")
+        await self.connection_client.send_message(msg)
+        logger.info(f"Sent handshake to {recipient_username}")
 
     async def handle_send_response(self, content):
         pass
@@ -337,7 +361,7 @@ class MessageHandler:
     async def handle_query_response(self, content):
         self.query_result = content
         self.query_result_event.set()
-        logger.info(f"queryResponse: {content}")
+        logger.info("queryResponse received")
         if self.db_manager and isinstance(content, dict):
             username = content.get("username")
             public_key = content.get("publicKey")
@@ -372,6 +396,7 @@ class MessageHandler:
                 pass
         return content
 
+
     def get_handler(self, action, context):
         """ Returns the appropriate handler function based on action and context """
         handlers = {
@@ -379,57 +404,167 @@ class MessageHandler:
             ("challenge", "login"): self.handle_login_challenge,
             ("challengeResponse", "registration"): self.handle_registration_response,
             ("challengeResponse", "login"): self.handle_login_response,
-            ("incomingMessage", None): self.handle_incoming_message_content,
+            ("incomingMessage", "chat"): self.handle_incoming_message_content,
             ("queryResponse", "query"): self.handle_query_response,
             ("sendResponse", "chat"): self.handle_send_response,
         }
         return handlers.get((action, context)) or handlers.get((action, None))
 
     async def handle_incoming_message_content(self, content):
-        """ Handles incoming messages, including decryption and storage """
+        """Handles incoming messages, including decryption, verification, and storage."""
+        logger.info("Processing incoming message")
+
         if not isinstance(content, dict):
-            logger.warning("'content' not a dict in 'incomingMessage' action.")
+            logger.error("Parsed content is not a valid dictionary after JSON decoding.")
             return
 
         from_user = content.get("sender")
-        is_encrypted = isinstance(content.get("body"), dict) or content.get("encrypted", False)
-        decrypted_msg = self._decrypt_message(content, from_user) if is_encrypted else content.get("body")
-
-        message_obj = self._parse_message(decrypted_msg)
-        if message_obj.get("type") == 1:
-            self._handle_handshake(from_user, message_obj)
+        body = content.get("body")
+        sender_pub_from_msg = content.get("senderPublicKey")  # Extract sender's long-term public key
+        if not from_user or not body:
+            logger.error("Malformed incoming message. Missing sender or body.")
             return
 
-        actual_message = message_obj.get("message")
-        if from_user and actual_message and self.db_manager:
-            self._store_message(from_user, actual_message)
-            self._update_chat_ui(from_user, actual_message)
+        encrypted_payload = body.get("encryptedPayload")
+        payload_signature = body.get("payloadSignature")
 
-    def _decrypt_message(self, content, from_user):
-        """ Handles message decryption """
-        sender_pub_from_msg = content.get("senderPublicKey")
+        if not encrypted_payload or not payload_signature:
+            logger.error("Malformed body. Missing encryptedPayload or payloadSignature.")
+            return
+
+        ephemeral_public_key_pem = encrypted_payload.get("ephemeralPublicKey")
+        if not ephemeral_public_key_pem:
+            logger.error("No ephemeral public key attached. Cannot derive shared secret.")
+            return
+
+        logger.info(f"Received message from {from_user}")
+
+        # Retrieve sender's stored long-term public key (for signature verification)
         contact = self.db_manager.get_contact(self.current_user["username"], from_user) if self.db_manager else None
-        sender_public_key_pem = contact[1] if contact else sender_pub_from_msg
+        sender_public_key_pem = contact[1] if contact else None
 
+        # If this is the first contact, store the sender's public key
+        if sender_pub_from_msg:
+            if not sender_public_key_pem:  # First-time contact
+                logger.info(f"Storing new sender public key for {from_user}")
+                self.db_manager.add_contact(self.current_user["username"], from_user, sender_pub_from_msg)
+                sender_public_key_pem = sender_pub_from_msg  #  Use this for signature verification
+
+        # If we still don't have a long-term public key, we cannot verify the signature
         if not sender_public_key_pem:
-            logger.error(f"No sender public key available for {from_user}.")
-            return content.get("body")
+            logger.error(f"No sender public key available for {from_user}. Cannot verify message signature.")
+            return None
 
         sender_public_key = serialization.load_pem_public_key(sender_public_key_pem.encode())
+
+        # Step 1: Verify the `payloadSignature` using sender's long-term key
+        encrypted_payload_str = json.dumps(encrypted_payload)
+
+        if not self.crypto_utils.verify_signature(sender_public_key, encrypted_payload_str, payload_signature):
+            logger.error(f"Signature verification failed for {from_user}. Dropping message.")
+            return None
+        logger.info("Payload signature verified successfully!")
+
+        # Step 2: Load recipient's private key
         recipient_private_key = self.crypto_utils.load_private_key(self.current_user["username"])
-        
+        if not recipient_private_key:
+            logger.error(f"No private key available for recipient: {self.current_user['username']}.")
+            return None
+
+        # Step 3: Decrypt using the ephemeral key
         try:
-            return self.crypto_utils.decrypt_message(content.get("body"), recipient_private_key, sender_public_key)
+            decrypted_message = self.crypto_utils.decrypt_message(
+                recipient_private_key, encrypted_payload
+            )
+
+            if decrypted_message:
+                logger.info(f" Decrypted message from {from_user}")
+            else:
+                logger.error(f"Failed to decrypt message from {from_user}.")
+
         except Exception as e:
             logger.error(f"Decryption failed: {e}")
-            return content.get("body")
+            return None
+
+        # Step 4: Ensure the message is in the correct format
+        try:
+            message_obj = json.loads(decrypted_message)
+        except json.JSONDecodeError:
+            message_obj = {"type": 0, "message": decrypted_message}
+
+        actual_message = message_obj.get("message")
+
+        if from_user and actual_message and self.db_manager:
+            self.db_manager.save_message(
+                self.current_user["username"],
+                from_user,
+                'from',
+                actual_message
+            )
+            logger.info(f"Stored incoming message from {from_user} in DB.")
+
+            # Update the chat UI
+            self._update_chat_ui(from_user, actual_message)
+
+
+    def _verify_and_decrypt_message(self, encrypted_payload, signature, from_user):
+        """ Calls CryptoUtils to verify the signature and then decrypt the message """
+
+        # Retrieve sender's stored public key
+        contact = self.db_manager.get_contact(self.current_user["username"], from_user) if self.db_manager else None
+        sender_public_key_pem = contact[1] if contact else None
+
+        if not sender_public_key_pem:
+            logger.error(f"No sender public key available for {from_user}. Cannot verify message.")
+            return None
+
+        sender_public_key = serialization.load_pem_public_key(sender_public_key_pem.encode())
+
+        # Step 1: Verify Signature Before Decryption
+        encrypted_payload_str = json.dumps(encrypted_payload)  # Convert dict to string for signature verification
+        if not self.crypto_utils.verify_signature(sender_public_key, encrypted_payload_str, signature):
+            logger.error(f"Signature verification failed for {from_user}. Dropping message.")
+            return None
+
+        # Load recipient's private key
+        recipient_private_key = self.crypto_utils.load_private_key(self.current_user["username"])
+
+        if not recipient_private_key:
+            logger.error(f"No private key available for recipient {self.current_user['username']}.")
+            return None
+
+        try:
+            # Step 2: Decrypt Message
+            decrypted_message = self.crypto_utils.decrypt_message(
+                recipient_private_key, encrypted_payload
+            )
+
+            if decrypted_message:
+                logger.info(f"Successfully decrypted message from {from_user}: {decrypted_message}")
+            else:
+                logger.error(f"Failed to decrypt message from {from_user}.")
+            
+            return decrypted_message
+
+        except Exception as e:
+            logger.error(f"Decryption or verification failed: {e}")
+            return None
 
     def _parse_message(self, decrypted_msg):
-        """ Ensures the message content is in the correct format """
+        """
+        Ensures the message content is in the correct format.
+        - If it's JSON, return as a dict.
+        - If it's plaintext, wrap it in {"type": 0, "message": decrypted_msg}.
+        """
         try:
-            return json.loads(decrypted_msg)
+            parsed_message = json.loads(decrypted_msg)  # Try parsing JSON
+            if isinstance(parsed_message, dict):
+                return parsed_message
         except json.JSONDecodeError:
-            return {"type": 0, "message": decrypted_msg}
+            pass  # If parsing fails, assume it's plain text
+
+        return {"type": 0, "message": decrypted_msg}  # Wrap plaintext in expected format
+
 
     def _handle_handshake(self, from_user, message_obj):
         """ Handles handshake messages and updates contact list """
