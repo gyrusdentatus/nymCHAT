@@ -8,7 +8,7 @@
 }
 ```
 
-This is then encapsulated for the nym-client to send, resulting in this nested JSON structure:
+This is then encapsulated for the nym-client to send, resulting in this nested  structure:
 ```json
 {
   "message": "{\"a\":5,\"p\":{\"f\":\"alice\",\"to\":\"bob\",\"e\":{\"epk\":\"<ephemeral_pubkey>\",\"iv\":\"<initialization_vector>\",\"ct\":\"<ciphertext>\",\"tag\":\"<auth_tag>\"},\"s\":\"<signature_of_payload>\"}}",
@@ -23,7 +23,7 @@ This is then encapsulated for the nym-client to send, resulting in this nested J
 #### 🔍 Query User (Action = 0)
 Query the server for user information (public key).
 
-```json
+```
 # Inner Payload
 {
   "u": "<target_username>"
@@ -45,7 +45,7 @@ Query the server for user information (public key).
 #### 🔑 Register (Action = 1)
 Registers a new user account.
 
-```json
+```
 # Inner Payload
 {
   "u": "<username>",
@@ -69,7 +69,7 @@ Registers a new user account.
 #### 📤 Registration Response (Action = 2)
 Client responds to registration challenge.
 
-```json
+```
 # Inner Payload
 {
   "u": "<username>",
@@ -94,7 +94,7 @@ Client responds to registration challenge.
 Request to authenticate an existing user.
 
 
-```json
+```
 # Inner Payload
 {
   "u": "<username>"
@@ -119,7 +119,7 @@ Request to authenticate an existing user.
 Client responds to a login challenge.
 
 
-```json
+```
 # Inner Payload
 {
   "u": "<username>",
@@ -144,7 +144,7 @@ Client responds to a login challenge.
 #### 📧 Send Direct Message (Action = 5)
 Sends an encrypted direct message to another user.
 
-```json
+```
 # Inner Payload
 {
   "f": "<sender_username>",
@@ -189,7 +189,7 @@ Context required:
 - `c: 3` (Query)
 
 If user found:
-```json
+```
 
 # Inner Payload
 {
@@ -213,7 +213,7 @@ If user found:
 ```
 
 If user not found:
-```json
+```
 # Inner Payload
 "No user found"
 
@@ -236,7 +236,7 @@ Context required:
 - `c: 2` (Chat)
 
 Payload:
-```json
+```
 
 # Inner Payload
 {
@@ -280,7 +280,7 @@ Context required:
 - `c: 2` (Chat)
 
 - on success:
-```json
+```
 # Inner Payload
 "success"
 
@@ -297,7 +297,7 @@ Context required:
 ```
 
 - on fail:
-```json
+```
 # Inner Payload
 "error:<reason>"
 
@@ -321,7 +321,7 @@ Contexts required:
 - `c: 1` (Login)
 
 Payload:
-```json
+```
 {
   "n": "<nonce>"
 }
@@ -336,12 +336,12 @@ Contexts required:
 
 Payload:
 - on success:
-```json
+```
 "success"
 ```
 
 - on fail:
-```json
+```
 "error:<reason>"
 ```
 
@@ -353,7 +353,7 @@ Direct encrypted messages sent between clients via ephemeral routing. The recipi
 Context required:
 - `c: 2` (Chat)
 
-```json
+```
 # Inner Payload
 {
   "f": "<sender_username>",
