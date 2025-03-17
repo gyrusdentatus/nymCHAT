@@ -9,6 +9,20 @@ NymCHAT is a messaging client that routes all traffic through the Nym Mixnet for
 - **User Registration**: No Personal Information Required. 
 - **End-to-End Encryption**: All messages are encrypted / decrypted locally using AES-GCM, with secure key exchange via ECDH, ensuring privacy and integrity of communication between users.
 
+
+## Docker Build
+
+Build:
+```
+docker build -t nymchat:latest .
+```
+
+Run
+```
+docker run -d -p 8080 -v $(pwd)/storage:/app/storage
+```
+
+
 ---
 ## Prerequisites
 - Python 3.11+
